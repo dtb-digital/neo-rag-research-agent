@@ -42,20 +42,36 @@ async def analyze_and_route_query(
     messages = [
         {"role": "system", "content": configuration.router_system_prompt}
     ] + state.messages
+    
+    # Log klassifiseringsprosessen
+    print(f"Router initialisert med spørsmål: {state.messages[-1].content}")
+    
     try:
         response = cast(
             Router, await model.with_structured_output(Router).ainvoke(messages)
         )
         # Sikre at response har både 'type' og 'logic'
         if 'type' not in response:
+            print("Advarsel: Klassifisering mangler 'type', bruker standardverdi 'lovspørsmål'")
             response['type'] = "lovspørsmål"  # Bruk lovspørsmål som standard
         if 'logic' not in response:
+            print("Advarsel: Klassifisering mangler 'logic', bruker tom streng")
             response['logic'] = ""
+            
+        # Spesiell sjekk for lovrelaterte spørsmål som blir feilklassifisert
+        last_message = state.messages[-1].content.lower() if state.messages else ""
+        if (response['type'] == "generelt" and 
+            any(word in last_message for word in ["lov", "lovverk", "paragraf", "forskrift", "juss", "rett", "rettslig", "innsyn", "offentlig"])):
+            print(f"Reklassifiserer fra 'generelt' til 'lovspørsmål' basert på nøkkelord i spørsmålet: {last_message}")
+            response['type'] = "lovspørsmål"
+            response['logic'] = f"Spørsmålet inneholder lovrelaterte nøkkelord: {last_message}"
+            
     except Exception as e:
         # Hvis noe går galt med strukturert output, bruk standardverdier
         print(f"Error in analyze_and_route_query: {e}")
-        response = Router(type="lovspørsmål", logic="")
+        response = Router(type="lovspørsmål", logic="Feilsituasjon oppstod, bruker lovspørsmål som standard")
     
+    print(f"Router klassifisering: type={response['type']}, logic={response['logic']}")
     return {"router": response}
 
 

@@ -18,9 +18,12 @@ Klassifiser en brukerforespørsel som dette hvis den kan besvares ved å slå op
 - Generelle prinsipper i norsk lovgivning
 - Forståelse av juridiske begreper eller definisjoner i lovverket
 - Rettigheter og plikter i henhold til norsk lov
+- Ethvert spørsmål som handler om faktisk norsk lovverk, lover, regler, forskrifter eller juridiske problemstillinger
 
 ## `generelt`
-Klassifiser en brukerforespørsel som dette hvis det er et generelt spørsmål som ikke er direkte relatert til norsk lovverk"""
+Klassifiser en brukerforespørsel som dette hvis det er et generelt spørsmål som IKKE på noen måte er relatert til norsk lovverk, lover, regler eller forskrifter. Dette bør brukes svært sjelden og kun for spørsmål som er helt urelatert til juss eller lovgivning.
+
+VIKTIG: Ethvert spørsmål om lover, regelverk, forskrifter, paragrafer, rettspraksis, juss, rettigheter, plikter eller juridiske begreper skal klassifiseres som `lovspørsmål` - IKKE som `generelt`."""
 
 GENERAL_SYSTEM_PROMPT = """Du er en juridisk rådgiver som spesialiserer seg på norsk lovverk. Din jobb er å hjelpe brukere med spørsmål om norske lover og forskrifter.
 
@@ -30,7 +33,7 @@ Din analyse har bestemt at brukeren stiller et generelt spørsmål som ikke er d
 {logic}
 </logic>
 
-Svar brukeren. Høflig avslå å svare og forklar at du kun kan svare på spørsmål relatert til norsk lovverk, og at hvis spørsmålet deres handler om norske lover eller forskrifter, bør de klargjøre hvordan det er relatert. Vær hyggelig mot dem - de er fortsatt en bruker!"""
+Svar brukeren. Høflig avslå å svare på spørsmål som ikke er relatert til norsk lovverk, og forklar at du kun kan svare på spørsmål relatert til norsk lovverk, lover og forskrifter. Oppmuntre dem til å stille et nytt spørsmål som er relatert til norske lover, og gi eksempler på hvilke typer spørsmål du kan hjelpe med. Vær hyggelig mot dem."""
 
 MORE_INFO_SYSTEM_PROMPT = """Du er en juridisk rådgiver som spesialiserer seg på norsk lovverk. Din jobb er å hjelpe brukere med spørsmål om norske lover og forskrifter.
 

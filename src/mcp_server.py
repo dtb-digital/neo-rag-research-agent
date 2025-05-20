@@ -56,7 +56,7 @@ class LovdataMCPServer:
         """Registrer verktøy for MCP-serveren."""
         
         @self.mcp.tool()
-        async def sok_i_lovdata(sporsmal: str, antall_resultater: int = 10) -> List[Dict[str, Any]]:
+        async def sok_i_lovdata(sporsmal: str, antall_resultater: int = 10) -> str:
             """
             Søk etter relevante lovtekster, forskrifter og juridiske dokumenter basert på ditt spørsmål.
             
@@ -71,10 +71,7 @@ class LovdataMCPServer:
                 antall_resultater: Antall resultater som skal returneres (standard: 10)
                 
             Returns:
-                En liste med relevante lovtekster, der hvert resultat inneholder:
-                - id: Lovens unike identifikator (f.eks. "lov-1814-05-17-1" for Grunnloven)
-                - score: Hvor relevant resultatet er for spørsmålet (høyere score = mer relevant)
-                - excerpt: Et kort utdrag av lovteksten som er relevant for spørsmålet
+                Bearbeidet svar på spørsmålet, eller en liste med relevante lovtekster
                 
             Eksempel på bruk:
                 "Hva sier offentlighetsloven om innsyn i dokumenter?"
@@ -107,28 +104,125 @@ class LovdataMCPServer:
                     )
                     
                     # Logg resultatet for debugging
-                    mcp_logger.info(f"Graf-resultat: {result.keys()}")
+                    mcp_logger.info(f"Graf-resultat mottatt: {type(result)}")
                     
-                    # Sjekk om vi har dokumenter i resultatet
-                    if hasattr(result, 'documents') and result.documents:
+                    # Hvis grafen har generert et komplett svar via messages, bruk dette
+                    if isinstance(result, dict) and 'messages' in result and result['messages']:
+                        # Finn AI-meldingen spesifikt basert på type-feltet
+                        ai_message = None
+                        messages = result['messages']
+                        
+                        # Først, prøv å finne en melding med type="ai"
+                        for msg in messages:
+                            # Sjekk for et direkte type-felt (som vi ser i state-objektet)
+                            if isinstance(msg, dict) and msg.get('type') == 'ai':
+                                ai_message = msg
+                                mcp_logger.info("Fant AI-melding basert på type='ai'")
+                                break
+                            elif hasattr(msg, 'type') and msg.type == 'ai':
+                                ai_message = msg
+                                mcp_logger.info("Fant AI-melding basert på msg.type='ai'")
+                                break
+                        
+                        # Hvis ingen funnet, prøv eldre eller alternative formater
+                        if ai_message is None:
+                            for msg in reversed(messages):
+                                # Sjekk på rolle-attributtet
+                                if (isinstance(msg, dict) and msg.get('role') == 'assistant'):
+                                    ai_message = msg
+                                    mcp_logger.info("Fant AI-melding basert på role='assistant'")
+                                    break
+                                elif hasattr(msg, 'role') and msg.role == 'assistant':
+                                    ai_message = msg
+                                    mcp_logger.info("Fant AI-melding basert på msg.role='assistant'")
+                                    break
+                                # Sjekk på klassenavn som fallback
+                                elif msg.__class__.__name__ == 'AIMessage':
+                                    ai_message = msg
+                                    mcp_logger.info("Fant AI-melding basert på klassenavn AIMessage")
+                                    break
+                        
+                        # Fallback til siste melding hvis ingen AI-melding ble funnet
+                        if ai_message is None:
+                            ai_message = messages[-1]
+                            mcp_logger.warning(f"Ingen AI-melding funnet, bruker siste melding: {type(ai_message)}")
+                        
+                        message = ai_message
+                        
+                        # Mer robust håndtering av meldingsinnhold - samme logikk som i sok_i_lovdata
+                        message_content = None
+                        
+                        # Tilfelle 1: Dette er et objekt med content-attributt (LangChain Message)
+                        if hasattr(message, 'content'):
+                            message_content = message.content
+                            mcp_logger.info("Fant message.content attributt")
+                        
+                        # Tilfelle 2: Dette er en dict med 'content' nøkkel
+                        elif isinstance(message, dict) and 'content' in message:
+                            message_content = message['content']
+                            mcp_logger.info("Fant message['content'] nøkkel")
+                            
+                            # Hvis content er en liste (kan skje med multimodal-modeller)
+                            if isinstance(message_content, list):
+                                # Finn første tekstobjekt i listen
+                                for item in message_content:
+                                    if isinstance(item, dict) and item.get('type') == 'text':
+                                        message_content = item.get('text', '')
+                                        mcp_logger.info("Ekstraherte tekst fra content-liste")
+                                        break
+                        
+                        # Tilfelle 3: Dette er et objekt som kan serialiseres til JSON
+                        elif hasattr(message, 'model_dump_json'):
+                            # Dette håndterer Pydantic-modeller
+                            import json
+                            try:
+                                message_dict = json.loads(message.model_dump_json())
+                                if isinstance(message_dict, dict) and 'content' in message_dict:
+                                    message_content = message_dict['content']
+                                    mcp_logger.info("Ekstraherte innhold fra model_dump_json")
+                            except Exception as json_err:
+                                mcp_logger.warning(f"Kunne ikke hente JSON fra melding: {str(json_err)}")
+                        
+                        # Fallback: Konverter til streng
+                        if message_content is None:
+                            message_content = str(message)
+                            mcp_logger.warning(f"Falt tilbake til str(message): {message_content[:50]}")
+                        
+                        mcp_logger.info(f"Returnerer bearbeidet svar fra grafen: {message_content[:100]}...")
+                        
+                        # Returner svaret direkte som string
+                        return message_content
+                        
+                    # Fallback: Vi har ikke et ferdig bearbeidet svar, så vi må lage et basert på dokumentene
+                    mcp_logger.warning("Ingen messages funnet i resultat, prøver å bruke dokumenter...")
+                    
+                    # Forsøk å hente dokumenter fra ulike mulige plasseringer i resultatet
+                    docs = []
+                    if isinstance(result, dict) and 'documents' in result:
+                        docs = result['documents']
+                    elif hasattr(result, 'documents') and result.documents:
                         docs = result.documents
-                        mcp_logger.info(f"Fant {len(docs)} dokumenter fra grafen")
-                    else:
-                        mcp_logger.warning("Ingen dokumenter funnet fra grafen")
-                        docs = []
+                    elif hasattr(result, 'get') and result.get('documents'):
+                        docs = result.get('documents', [])
                     
-                    # Konverter dokumentene til ønsket format
-                    results = []
-                    for i, doc in enumerate(docs):
-                        result = {
-                            "id": doc.metadata.get("id", f"doc-{i}"),
-                            "score": doc.metadata.get("score", 0.0),
-                            "excerpt": truncate_text(doc.page_content, max_length=200)
-                        }
-                        results.append(result)
+                    if docs:
+                        mcp_logger.info(f"Fant {len(docs)} dokumenter som fallback")
+                        # Konverter dokumentene til en tekstlig oppsummering
+                        doc_summaries = []
+                        for i, doc in enumerate(docs):
+                            if hasattr(doc, 'page_content'):
+                                doc_id = doc.metadata.get("id", f"Dokument {i+1}") if hasattr(doc, 'metadata') else f"Dokument {i+1}"
+                                doc_summaries.append(f"{doc_id}: {truncate_text(doc.page_content, max_length=200)}")
+                        
+                        # Kombiner dokumentene til et enkelt svar
+                        if doc_summaries:
+                            response = "Her er relevante dokumenter jeg fant:\n\n" + "\n\n".join(doc_summaries)
+                            mcp_logger.info(f"Genererte svar fra {len(doc_summaries)} dokumenter")
+                            return response
                     
-                    mcp_logger.info(f"Søk fullført. Fant {len(results)} resultater.")
-                    return results
+                    mcp_logger.warning("Kunne ikke finne dokumenter eller messages i resultatet")
+                    return "Beklager, jeg kunne ikke finne relevant informasjon om dette spørsmålet."
+                
                 except Exception as e:
                     mcp_logger.error(f"Feil ved søk: {str(e)}")
                     mcp_logger.warning("Faller tilbake til dummy-implementasjon for søk")
@@ -198,21 +292,116 @@ class LovdataMCPServer:
                     )
                     
                     # Logg resultatet for debugging
-                    mcp_logger.info(f"Graf-resultat ved dokumenthenting: {result.keys()}")
+                    mcp_logger.info(f"Graf-resultat ved dokumenthenting: {type(result)}")
                     
-                    if hasattr(result, 'documents') and result.documents:
+                    # Hvis grafen har generert et komplett svar via messages, bruk dette
+                    if isinstance(result, dict) and 'messages' in result and result['messages']:
+                        # Finn AI-meldingen spesifikt basert på type-feltet
+                        ai_message = None
+                        messages = result['messages']
+                        
+                        # Først, prøv å finne en melding med type="ai"
+                        for msg in messages:
+                            # Sjekk for et direkte type-felt (som vi ser i state-objektet)
+                            if isinstance(msg, dict) and msg.get('type') == 'ai':
+                                ai_message = msg
+                                mcp_logger.info("Fant AI-melding basert på type='ai'")
+                                break
+                            elif hasattr(msg, 'type') and msg.type == 'ai':
+                                ai_message = msg
+                                mcp_logger.info("Fant AI-melding basert på msg.type='ai'")
+                                break
+                        
+                        # Hvis ingen funnet, prøv eldre eller alternative formater
+                        if ai_message is None:
+                            for msg in reversed(messages):
+                                # Sjekk på rolle-attributtet
+                                if (isinstance(msg, dict) and msg.get('role') == 'assistant'):
+                                    ai_message = msg
+                                    mcp_logger.info("Fant AI-melding basert på role='assistant'")
+                                    break
+                                elif hasattr(msg, 'role') and msg.role == 'assistant':
+                                    ai_message = msg
+                                    mcp_logger.info("Fant AI-melding basert på msg.role='assistant'")
+                                    break
+                                # Sjekk på klassenavn som fallback
+                                elif msg.__class__.__name__ == 'AIMessage':
+                                    ai_message = msg
+                                    mcp_logger.info("Fant AI-melding basert på klassenavn AIMessage")
+                                    break
+                        
+                        # Fallback til siste melding hvis ingen AI-melding ble funnet
+                        if ai_message is None:
+                            ai_message = messages[-1]
+                            mcp_logger.warning(f"Ingen AI-melding funnet, bruker siste melding: {type(ai_message)}")
+                        
+                        message = ai_message
+                        
+                        # Mer robust håndtering av meldingsinnhold - samme logikk som i sok_i_lovdata
+                        message_content = None
+                        
+                        # Tilfelle 1: Dette er et objekt med content-attributt (LangChain Message)
+                        if hasattr(message, 'content'):
+                            message_content = message.content
+                            mcp_logger.info("Fant message.content attributt")
+                        
+                        # Tilfelle 2: Dette er en dict med 'content' nøkkel
+                        elif isinstance(message, dict) and 'content' in message:
+                            message_content = message['content']
+                            mcp_logger.info("Fant message['content'] nøkkel")
+                            
+                            # Hvis content er en liste (kan skje med multimodal-modeller)
+                            if isinstance(message_content, list):
+                                # Finn første tekstobjekt i listen
+                                for item in message_content:
+                                    if isinstance(item, dict) and item.get('type') == 'text':
+                                        message_content = item.get('text', '')
+                                        mcp_logger.info("Ekstraherte tekst fra content-liste")
+                                        break
+                        
+                        # Tilfelle 3: Dette er et objekt som kan serialiseres til JSON
+                        elif hasattr(message, 'model_dump_json'):
+                            # Dette håndterer Pydantic-modeller
+                            import json
+                            try:
+                                message_dict = json.loads(message.model_dump_json())
+                                if isinstance(message_dict, dict) and 'content' in message_dict:
+                                    message_content = message_dict['content']
+                                    mcp_logger.info("Ekstraherte innhold fra model_dump_json")
+                            except Exception as json_err:
+                                mcp_logger.warning(f"Kunne ikke hente JSON fra melding: {str(json_err)}")
+                        
+                        # Fallback: Konverter til streng
+                        if message_content is None:
+                            message_content = str(message)
+                            mcp_logger.warning(f"Falt tilbake til str(message): {message_content[:50]}")
+                            
+                        mcp_logger.info(f"Returnerer bearbeidet svar fra grafen: {message_content[:100]}...")
+                        return message_content
+                    
+                    # Fallback: Forsøk å hente dokumenter direkte
+                    docs = []
+                    if isinstance(result, dict) and 'documents' in result:
+                        docs = result['documents']
+                    elif hasattr(result, 'documents') and result.documents:
+                        docs = result.documents
+                    elif hasattr(result, 'get') and result.get('documents'):
+                        docs = result.get('documents', [])
+                    
+                    if docs:
                         # Finn det første dokumentet som har riktig ID
-                        for doc in result.documents:
-                            if doc.metadata.get("id") == lov_id:
+                        for doc in docs:
+                            if hasattr(doc, 'metadata') and doc.metadata.get("id") == lov_id:
                                 mcp_logger.info(f"Dokument funnet: {lov_id}")
                                 return doc.page_content
                         
                         # Hvis vi ikke fant et dokument med riktig ID, returner innholdet av første dokument
-                        if result.documents:
+                        if docs:
                             mcp_logger.warning(f"Dokument med ID {lov_id} ikke funnet, bruker første resultat")
-                            return result.documents[0].page_content
+                            return docs[0].page_content if hasattr(docs[0], 'page_content') else str(docs[0])
                     
                     mcp_logger.warning(f"Dokument ikke funnet: {lov_id}")
+                    return f"Beklager, jeg kunne ikke finne lovtekst med ID {lov_id}."
                 except Exception as e:
                     mcp_logger.error(f"Feil ved henting av dokument: {str(e)}")
                     mcp_logger.warning("Faller tilbake til dummy-implementasjon for dokumenthenting")

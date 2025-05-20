@@ -69,14 +69,22 @@ def make_pinecone_retriever(
 ) -> Generator[VectorStoreRetriever, None, None]:
     """Configure this agent to connect to a specific pinecone index."""
     from langchain_pinecone import PineconeVectorStore
+    import pinecone
 
-    vstore = PineconeVectorStore.from_existing_index(
-        os.environ["PINECONE_INDEX_NAME"], embedding=embedding_model
+    # Koble til Pinecone
+    pc = pinecone.Pinecone(api_key=os.environ["PINECONE_API_KEY"])
+    index_name = os.environ["PINECONE_INDEX_NAME"]
+    
+    # Bruk direkte konstruktør i stedet for from_existing_index
+    # Dette løser problemet med "Found document with no `text` key. Skipping."
+    index = pc.Index(name=index_name)
+    vstore = PineconeVectorStore(
+        index=index,
+        embedding=embedding_model,
+        text_key="page_content"  # Spesifiser eksplisitt hvor teksten ligger
     )
-    yield vstore.as_retriever(
-        search_kwargs=configuration.search_kwargs, 
-        content_key="page_content"
-    )
+    
+    yield vstore.as_retriever(search_kwargs=configuration.search_kwargs)
 
 
 @contextmanager
