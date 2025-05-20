@@ -1,0 +1,143 @@
+# Produktkravdokument (PRD): Lovdata RAG-agent MCP-server
+
+## Prosjektoversikt
+Dette prosjektet har som mål å bygge en MCP-server (Model Context Protocol) som fungerer som en bro mellom språkmodeller (som Claude) og norske lov- og forskriftstekster fra Lovdata. Serveren vil gi språkmodeller mulighet til å søke semantisk, finne relevante lover og hente ut fulle lovtekster via et strukturert grensesnitt.
+
+## Bakgrunn og formål
+Norske lov- og forskriftstekster er offentlig tilgjengelige, men språkmodeller har ikke direktetilgang til strukturerte og oppdaterte versjoner. Ved å bygge en MCP-server som indekserer lovtekster i en vektorbase, vil vi gi språkmodeller mulighet til å:
+1. Finne de mest relevante paragrafer basert på semantisk forståelse
+2. Hente ut fullstendige lovtekster for presise sitater og referanser
+3. Svare på juridiske spørsmål med referanser til nøyaktige lovparagrafer
+
+## Teknisk arkitektur
+
+### Overordnet arkitektur
+- **MCP-server**: Python-basert server som bruker FastMCP-biblioteket
+- **Vektorbase**: Pinecone serverless for lagring av embeddings
+- **Embedding-modell**: OpenAI text-embedding-3-small eller tilsvarende
+- **Transportlag**: stdio for kommunikasjon med Claude
+- **RAG-rammeverk**: LangGraph for indeksering og søk
+- **Datakilder**: Lovdata åpent API eller nedlastet lovdata-korpus
+
+### Komponentdiagram
+1. **MCP-server** (mcp_server.py)
+   - Registrerer og eksponerer MCP-verktøy
+   - Håndterer kommunikasjon via stdio
+
+2. **Retriever-modul** (arvet fra eksisterende RAG-prosjekt)
+   - Kobling mot Pinecone vektorbase
+   - Embedding-funksjonalitet
+   - Søk og henting av dokumenter
+
+3. **Indekseringsmodul**
+   - Innhenting av lovdata
+   - Chunking av lovtekster
+   - Embedding og lagring i vektorbase
+
+4. **Lovdata-parser**
+   - Konvertering fra XML/HTML til ren tekst
+   - Metadata-ekstraksjon (paragraf-ID, lov-navn, etc.)
+
+## Funksjonelle krav
+
+### MCP-verktøy (tools)
+
+1. **semantic_search**
+   - **Input**: 
+     - query (string): Brukerens spørsmål eller søkeord
+     - top_k (int, default=10): Antall resultater som skal returneres
+   - **Output**: Liste av resultater med id, score og utdrag
+   - **Beskrivelse**: Søk etter relevante lovparagrafer basert på semantisk forståelse
+
+2. **get_document**
+   - **Input**: 
+     - id (string): ID for dokumentet som skal hentes
+   - **Output**: Fullstendig lovtekst som ren tekst
+   - **Beskrivelse**: Hent komplett lovtekst basert på ID fra søkeresultater
+
+### Indekseringsfunksjonalitet
+- Periodisk oppdatering av lovdata-indeks
+- Effektiv chunking med overlap for kontekstbevaring
+- Metadata-tagging for effektiv henting og filtrering
+
+## Ikke-funksjonelle krav
+
+### Ytelse
+- Søketid under 1 sekund for semantiske spørringer
+- Skalering til hele Lovdata-korpuset (ca. 1M+ paragrafer)
+- Effektiv minnebruk for embedding-modell
+
+### Sikkerhet og personvern
+- Kun offentlig tilgjengelige lovtekster
+- Ingen lagring av brukerdata eller spørringer
+- Ingen autentiseringsdetaljer i kode eller versjonskontroll
+
+### Brukervennlighet
+- Klar dokumentasjon av verktøy og parametere
+- Feilmeldinger som er informative og hjelpsomme
+- Enkel konfigurasjon via miljøvariabler
+
+## Avgrensninger
+- Første versjon fokuserer kun på lov- og forskriftstekster, ikke forarbeider
+- Ingen støtte for historiske versjoner av lover i første versjon
+- Ingen rettsavgjørelser eller juridiske tolkninger
+
+## Implementasjonsplan
+
+### Fase 1: Grunnleggende MCP-server
+- Oppsett av MCP-server med FastMCP
+- Implementasjon av de to hovedverktøyene (semantic_search, get_document)
+- Kobling mot eksisterende retriever-funksjonalitet
+
+### Fase 2: Innhenting og indeksering
+- Skript for innhenting av lovdata
+- Parser for lovtekster og metadata
+- Indekseringsfunksjonalitet for vektorbase
+
+### Fase 3: Testing og optimalisering
+- Unit-tester for alle komponenter
+- Ytelsesoptimalisering av søk
+- Forbedret chunking og embedding
+
+### Fase 4: Utvidelser (fremtidig)
+- Støtte for historiske lovversjoner
+- Inkludering av forarbeider
+- Filtrering basert på metadata
+
+## Tekniske avhengigheter
+
+### Biblioteker
+- mcp[cli] - Model Context Protocol-server
+- langchain - RAG-rammeverk
+- langgraph - Graf-basert RAG
+- pinecone-client - Kobling mot Pinecone
+- openai - For embedding-modellen
+- python-dotenv - Miljøvariabel-håndtering
+
+### Eksterne tjenester
+- Pinecone serverless - Vektorbase
+- OpenAI API - Embedding-modell
+- Eventuelt Lovdata API hvis brukt direkte
+
+## Konfigurasjon
+Prosjektet bruker miljøvariabler via .env-fil:
+- PINECONE_API_KEY - API-nøkkel for Pinecone
+- PINECONE_INDEX_NAME - Navn på Pinecone-indeks
+- OPENAI_API_KEY - API-nøkkel for embeddings
+- DEBUG - Aktiverer debugging-informasjon
+- LOG_LEVEL - Nivå for logging
+
+## Metrikker og logging
+- Logging av søketid og treff
+- Loggfiltrering basert på LOG_LEVEL
+- Strukturert logging for debugging og ytelsesanalyse
+
+## Vedlegg
+- Dette PRD vil fungere som basis for Task Master-oppgaver
+- Dokumentasjon for MCP-verktøy generes automatisk
+- Eksempelspørringer for testing genereres i senere fase
+
+## Approvals and sign-offs
+- Prosjekteier: [Navn]
+- Teknisk ansvarlig: [Navn]
+- Dato: [Dato] 
