@@ -6,18 +6,22 @@ and key functions for processing & routing user queries, generating research pla
 conducting research, and formulating responses.
 """
 
-from typing import Any, Literal, TypedDict, cast
-
-from langchain_core.messages import BaseMessage
-from langchain_core.runnables import RunnableConfig
+from typing import Any, Dict, List, Literal, TypedDict, cast
 from langgraph.graph import END, START, StateGraph
 
+from langchain_core.messages import BaseMessage
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableConfig
+from langsmith.run_helpers import traceable
+
+from retrieval_graph import prompts
 from retrieval_graph.configuration import AgentConfiguration
-from retrieval_graph.researcher_graph.graph import graph as researcher_graph
-from retrieval_graph.state import AgentState, InputState, Router
+from retrieval_graph.researcher_graph import graph as researcher_graph
+from retrieval_graph.state import AgentState, InputState, Router, reduce_docs
 from shared.utils import format_docs, load_chat_model
 
 
+@traceable(run_type="chain")
 async def analyze_and_route_query(
     state: AgentState, *, config: RunnableConfig
 ) -> dict[str, Router]:
@@ -80,6 +84,7 @@ def route_query(
         raise ValueError(f"Unknown router type {_type}")
 
 
+@traceable(run_type="chain")
 async def ask_for_more_info(
     state: AgentState, *, config: RunnableConfig
 ) -> dict[str, list[BaseMessage]]:
@@ -104,6 +109,7 @@ async def ask_for_more_info(
     return {"messages": [response]}
 
 
+@traceable(run_type="chain")
 async def respond_to_general_query(
     state: AgentState, *, config: RunnableConfig
 ) -> dict[str, list[BaseMessage]]:
@@ -128,6 +134,7 @@ async def respond_to_general_query(
     return {"messages": [response]}
 
 
+@traceable(run_type="chain")
 async def create_research_plan(
     state: AgentState, *, config: RunnableConfig
 ) -> dict[str, list[str] | str]:
@@ -155,6 +162,7 @@ async def create_research_plan(
     return {"steps": response["steps"], "documents": "delete"}
 
 
+@traceable(run_type="chain")
 async def conduct_research(
     state: AgentState, *, config: RunnableConfig
 ) -> dict[str, Any]:
@@ -174,8 +182,44 @@ async def conduct_research(
         - Invokes the researcher_graph with the first step of the research plan.
         - Updates the state with the retrieved documents and removes the completed step.
     """
-    result = await researcher_graph.ainvoke({"question": state.steps[0]}, config)
-    return {"documents": result["documents"], "steps": state.steps[1:]}
+    # Forskergraf er ikke en kjørbar graf, men en StateGraph definisjon
+    # Vi må bruke vår egen forsknings-logikk her
+    
+    from retrieval_graph.researcher_graph.state import ResearcherState
+    from shared.retrieval import make_retriever
+    
+    # Initialize researcher state with the first step as question
+    researcher_state = ResearcherState(question=state.steps[0])
+    
+    # Generate queries based on the question
+    configuration = AgentConfiguration.from_runnable_config(config)
+    model = load_chat_model(configuration.query_model)
+    
+    class Response(TypedDict):
+        queries: list[str]
+
+    structured_model = model.with_structured_output(Response)
+    messages = [
+        {"role": "system", "content": configuration.generate_queries_system_prompt},
+        {"role": "human", "content": researcher_state.question},
+    ]
+    response = cast(Response, await structured_model.ainvoke(messages))
+    queries = response["queries"]
+    
+    # Run retrieval for each query
+    all_docs = []
+    with make_retriever(config) as retriever:
+        for query in queries:
+            docs = await retriever.ainvoke(query, config)
+            all_docs.extend(docs)
+    
+    # Her bruker vi reduce_docs for å fjerne duplikater, 
+    # men må kalle den riktig, først med None og deretter med dokumentene
+    unique_docs = reduce_docs(None, all_docs)
+    
+    # Return updated state
+    remaining_steps = state.steps[1:] if len(state.steps) > 1 else []
+    return {"documents": unique_docs, "steps": remaining_steps}
 
 
 def check_finished(state: AgentState) -> Literal["respond", "conduct_research"]:
@@ -197,6 +241,7 @@ def check_finished(state: AgentState) -> Literal["respond", "conduct_research"]:
         return "respond"
 
 
+@traceable(run_type="chain")
 async def respond(
     state: AgentState, *, config: RunnableConfig
 ) -> dict[str, list[BaseMessage]]:
@@ -248,5 +293,19 @@ builder.add_edge("respond", END)
 builder.add_edge("ask_for_more_info", END)
 builder.add_edge("respond_to_general_query", END)
 
+# Eksporter grafen for bruk av andre moduler
 graph = builder.compile()
-graph.name = "RetrievalGraph"
+
+# Wrap grafen med LangSmith tracing
+original_ainvoke = graph.ainvoke
+
+# Oppdatere traced_ainvoke for å bruke traceable
+@traceable(run_type="chain", name="full_retrieval_graph")
+async def traced_ainvoke(state, config=None):
+    """Wrap the graph's invoke method with LangSmith tracing."""
+    if config is None:
+        config = {}
+    return await original_ainvoke(state, config)
+
+# Erstatt opprinnelig ainvoke med traced versjon
+graph.ainvoke = traced_ainvoke
