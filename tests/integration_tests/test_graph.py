@@ -89,9 +89,9 @@ async def test_offentlighetsloven_query() -> None:
         }
     )
     
-    # Test spørring om offentlighetsloven
+    # Test spørring om offentlighetsloven - formulert bedre for vektor-søk
     res = await graph.ainvoke(
-        {"messages": [("user", "Hva er hovedprinsippene i offentlighetsloven?")]},
+        {"messages": [("user", "Offentlighetsloven paragraf 3 om hovedregel for innsyn, hva sier den om offentlige dokumenter og hvilke unntak finnes?")]},
         config,
     )
     
@@ -110,7 +110,10 @@ async def test_offentlighetsloven_query() -> None:
         "offentlighetsprinsippet",
         "offentleg",
         "verksemd",
-        "dokument"
+        "dokument",
+        "paragraf 3",
+        "hovedregel",
+        "unntatt"
     ]
     
     found_terms = [term for term in relevant_terms if term in response]
