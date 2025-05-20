@@ -12,10 +12,7 @@ import sys
 from typing import Any, Dict, List, Optional
 
 # Legg til prosjektets rotmappe i sys.path for å støtte importer
-project_root = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
-sys.path.insert(0, project_root)
-# Legg til src-mappen i sys.path for å støtte begge importstiler
-sys.path.append(os.path.join(project_root, "src"))
+sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 
 # Sett miljøvariabelen LOG_LEVEL til INFO direkte før import av FastMCP
 os.environ["LOG_LEVEL"] = "INFO"
@@ -23,19 +20,6 @@ os.environ["LOG_LEVEL"] = "INFO"
 from fastmcp import FastMCP
 from src.logger import logger, setup_logger
 from src.utils import truncate_text
-
-# Import retrieval_graph og andre nødvendige moduler
-try:
-    # Forsøk å importere retrieval_graph for søkefunksjonalitet
-    from retrieval_graph import graph as retrieval_graph
-    from shared import retrieval
-    from langchain_core.documents import Document
-    USING_RETRIEVAL_GRAPH = True
-except ImportError as e:
-    # Logg feil og bruk dummy-implementasjon hvis import feiler
-    USING_RETRIEVAL_GRAPH = False
-    logger.error(f"Kunne ikke importere retrieval_graph: {str(e)}")
-    logger.warning("Bruker dummy-implementasjon for søk og dokumenthenting")
 
 # Opprett en spesifikk logger for MCP-serveren
 mcp_logger = setup_logger("mcp-server")
@@ -50,7 +34,7 @@ class LovdataMCPServer:
         # Registrer verktøy
         self._register_tools()
         
-        mcp_logger.info(f"MCP-server initialisert (Using retrieval_graph: {USING_RETRIEVAL_GRAPH})")
+        mcp_logger.info("MCP-server initialisert")
     
     def _register_tools(self):
         """Registrer verktøy for MCP-serveren."""
@@ -69,29 +53,7 @@ class LovdataMCPServer:
             """
             mcp_logger.info(f"Utfører semantisk søk med query: {query}, top_k: {top_k}")
             
-            if USING_RETRIEVAL_GRAPH:
-                try:
-                    # Bruk retrieval-modulen for å søke
-                    docs = await retrieval.search_documents(query, limit=top_k)
-                    
-                    # Konverter dokumentene til ønsket format
-                    results = []
-                    for i, doc in enumerate(docs):
-                        result = {
-                            "id": doc.metadata.get("id", f"doc-{i}"),
-                            "score": doc.metadata.get("score", 0.0),
-                            "excerpt": truncate_text(doc.page_content, max_length=200)
-                        }
-                        results.append(result)
-                    
-                    mcp_logger.info(f"Søk fullført. Fant {len(results)} resultater.")
-                    return results
-                except Exception as e:
-                    mcp_logger.error(f"Feil ved søk: {str(e)}")
-                    mcp_logger.warning("Faller tilbake til dummy-implementasjon for søk")
-                    # Fall tilbake til dummy-implementasjon ved feil
-            
-            # Dummy-implementasjon for testing eller fallback
+            # Dummy-implementasjon for testing
             dummy_results = [
                 {
                     "id": "lov-1814-05-17-1",
@@ -124,23 +86,7 @@ class LovdataMCPServer:
             """
             mcp_logger.info(f"Henter dokument med id: {id}")
             
-            if USING_RETRIEVAL_GRAPH:
-                try:
-                    # Søk spesifikt etter dokumentet med det gitte ID-et
-                    docs = await retrieval.search_documents(f"id:{id}", limit=1)
-                    
-                    if docs and len(docs) > 0:
-                        doc_content = docs[0].page_content
-                        mcp_logger.info(f"Dokument funnet: {id}")
-                        return doc_content
-                    else:
-                        mcp_logger.warning(f"Dokument ikke funnet: {id}")
-                except Exception as e:
-                    mcp_logger.error(f"Feil ved henting av dokument: {str(e)}")
-                    mcp_logger.warning("Faller tilbake til dummy-implementasjon for dokumenthenting")
-                    # Fall tilbake til dummy-implementasjon ved feil
-            
-            # Dummy-implementasjon for testing eller fallback
+            # Dummy-implementasjon for testing
             if id == "lov-1814-05-17-1":
                 return "Kongeriket Norges Grunnlov, gitt i riksforsamlingen på Eidsvoll den 17. mai 1814, slik den lyder etter senere endringer. § 1. Kongeriket Norge er et fritt, selvstendig, udelelig og uavhendelig rike."
             elif id == "lov-1992-07-17-100":
