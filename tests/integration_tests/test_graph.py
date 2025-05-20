@@ -13,7 +13,7 @@ import src.config  # Dette vil laste miljøvariabler fra .env
 from index_graph import graph as index_graph
 from retrieval_graph import graph
 from shared.configuration import BaseConfiguration
-from shared.retrieval import make_text_encoder
+from shared.retrieval import make_text_encoder, make_retriever
 
 
 @contextmanager
@@ -76,6 +76,46 @@ async def test_retrieval_graph() -> None:
     print(f"Klassifisering av andre lovspørsmål: {res['router']['type']}")
     expect(res["router"]["type"]).to_contain("lovspørsmål")
 
+
+@pytest.mark.asyncio
+async def test_pinecone_retriever_directly() -> None:
+    """Test Pinecone-retrieveren direkte for å sjekke at den returnerer dokumenter."""
+    config = RunnableConfig(
+        configurable={
+            "retriever_provider": "pinecone",
+            "embedding_model": "openai/text-embedding-3-small",
+            "search_kwargs": {"k": 5}  # Hent topp 5 resultater
+        }
+    )
+    
+    # Test flere ulike søketermer for å se hva som gir treff
+    search_terms = [
+        "offentlighetsloven",
+        "lov om rett til innsyn i dokument",
+        "paragraf 3 innsyn",
+        "lovdata offentlighetslov",
+        "offentleglova",
+        "forvaltningsrett innsyn"
+    ]
+    
+    # Test retrieveren direkte
+    with make_retriever(config) as retriever:
+        print("\n\n=== DIREKTE PINECONE-RETRIEVER TEST ===")
+        for term in search_terms:
+            print(f"\nSøker etter: '{term}'")
+            docs = await retriever.ainvoke(term, config)
+            if docs:
+                print(f"✅ Fant {len(docs)} dokumenter!")
+                # Vis metadata for første dokument
+                if len(docs) > 0:
+                    print(f"Første dokument metadata: {docs[0].metadata}")
+                    print(f"Første dokument innhold (utdrag): {docs[0].page_content[:100]}...")
+            else:
+                print(f"❌ Ingen dokumenter funnet for '{term}'")
+    
+    assert True  # Testen er bare for debug-informasjon
+
+
 @pytest.mark.asyncio
 async def test_offentlighetsloven_query() -> None:
     """Test hovedgrafen med en spørring om offentlighetsloven med Pinecone-retriever."""
@@ -86,12 +126,25 @@ async def test_offentlighetsloven_query() -> None:
             "embedding_model": "openai/text-embedding-3-small",
             "query_model": "openai/gpt-4o-mini",     # Bruk gpt-4o-mini som støtter structured output
             "response_model": "openai/gpt-4o-mini",  # Bruk gpt-4o-mini for alle svar
+            "search_kwargs": {"k": 5}  # Hent flere dokumenter
         }
     )
     
+    # Test flere spørsmål om offentlighetsloven for å se hva som fungerer best
+    test_questions = [
+        "Offentlighetsloven paragraf 3 om hovedregel for innsyn, hva sier den om offentlige dokumenter og hvilke unntak finnes?",
+        "Kan du fortelle meg om offentleglova?",
+        "Hva står i offentlighetsloven?",
+        "Jeg trenger informasjon om lov om rett til innsyn i dokument i offentleg verksemd"
+    ]
+    
+    # Vi tester bare første spørsmål for å holde testen kort
+    query = test_questions[0]
+    print(f"\nTester med spørsmålet: '{query}'")
+    
     # Test spørring om offentlighetsloven - formulert bedre for vektor-søk
     res = await graph.ainvoke(
-        {"messages": [("user", "Offentlighetsloven paragraf 3 om hovedregel for innsyn, hva sier den om offentlige dokumenter og hvilke unntak finnes?")]},
+        {"messages": [("user", query)]},
         config,
     )
     

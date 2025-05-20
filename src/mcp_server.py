@@ -28,8 +28,8 @@ from src.utils import truncate_text
 try:
     # Forsøk å importere retrieval_graph for søkefunksjonalitet
     from retrieval_graph import graph as retrieval_graph
-    from shared import retrieval
-    from langchain_core.documents import Document
+    from langchain_core.runnables import RunnableConfig
+    from langchain_core.messages import HumanMessage
     USING_RETRIEVAL_GRAPH = True
 except ImportError as e:
     # Logg feil og bruk dummy-implementasjon hvis import feiler
@@ -56,23 +56,66 @@ class LovdataMCPServer:
         """Registrer verktøy for MCP-serveren."""
         
         @self.mcp.tool()
-        async def semantic_search(query: str, top_k: int = 10) -> List[Dict[str, Any]]:
+        async def sok_i_lovdata(sporsmal: str, antall_resultater: int = 10) -> List[Dict[str, Any]]:
             """
-            Søk etter relevante lovtekster basert på spørsmål eller søkeord.
+            Søk etter relevante lovtekster, forskrifter og juridiske dokumenter basert på ditt spørsmål.
+            
+            BRUK DETTE VERKTØYET når du ønsker oppdatert informasjon om lovverk og forskrifter, hentet direkte fra lovdata.no.
+            
+            Dette verktøyet bruker en avansert juridisk modell til å forstå ditt spørsmål og returnerer 
+            de mest relevante delene av norsk lovverk fra Lovdata. Verktøyet analyserer spørsmålet ditt,
+            utfører semantisk søk i lovdatabasen, og formaterer resultatene slik at de er lett tilgjengelige.
             
             Args:
-                query: Brukerens spørsmål eller søkeord
-                top_k: Antall resultater som skal returneres (default: 10)
+                sporsmal: Ditt juridiske spørsmål eller søkeord som du ønsker å finne relevante lover og forskrifter til
+                antall_resultater: Antall resultater som skal returneres (standard: 10)
                 
             Returns:
-                Liste av resultater med id, score og utdrag
+                En liste med relevante lovtekster, der hvert resultat inneholder:
+                - id: Lovens unike identifikator (f.eks. "lov-1814-05-17-1" for Grunnloven)
+                - score: Hvor relevant resultatet er for spørsmålet (høyere score = mer relevant)
+                - excerpt: Et kort utdrag av lovteksten som er relevant for spørsmålet
+                
+            Eksempel på bruk:
+                "Hva sier offentlighetsloven om innsyn i dokumenter?"
+                "Hvilke regler gjelder for permittering av ansatte?"
+                "Hva er formålet med offentlighetsloven?"
+                "Fortell meg om arbeidsmiljøloven"
+                "Jeg trenger informasjon om åndsverkloven"
             """
-            mcp_logger.info(f"Utfører semantisk søk med query: {query}, top_k: {top_k}")
+            mcp_logger.info(f"Utfører søk i lovdata: {sporsmal}, antall_resultater: {antall_resultater}")
             
             if USING_RETRIEVAL_GRAPH:
                 try:
-                    # Bruk retrieval-modulen for å søke
-                    docs = await retrieval.search_documents(query, limit=top_k)
+                    # Bruk hovedgrafen for søk i stedet for direkte søk
+                    # Konfigurer søk med Pinecone
+                    config = RunnableConfig(
+                        configurable={
+                            "retriever_provider": "pinecone",
+                            "embedding_model": "openai/text-embedding-3-small",
+                            "query_model": "openai/gpt-4o-mini",
+                            "response_model": "openai/gpt-4o-mini",
+                            "search_kwargs": {"k": antall_resultater}
+                        }
+                    )
+                    
+                    # Kjør grafen med spørringen
+                    mcp_logger.info(f"Invoker retrieval_graph med spørring: {sporsmal}")
+                    result = await retrieval_graph.ainvoke(
+                        {"messages": [HumanMessage(content=sporsmal)]},
+                        config,
+                    )
+                    
+                    # Logg resultatet for debugging
+                    mcp_logger.info(f"Graf-resultat: {result.keys()}")
+                    
+                    # Sjekk om vi har dokumenter i resultatet
+                    if hasattr(result, 'documents') and result.documents:
+                        docs = result.documents
+                        mcp_logger.info(f"Fant {len(docs)} dokumenter fra grafen")
+                    else:
+                        mcp_logger.warning("Ingen dokumenter funnet fra grafen")
+                        docs = []
                     
                     # Konverter dokumentene til ønsket format
                     results = []
@@ -105,48 +148,83 @@ class LovdataMCPServer:
                 }
             ]
             
-            # Begrens antall resultater til top_k
-            results = dummy_results[:min(top_k, len(dummy_results))]
+            # Begrens antall resultater til antall_resultater
+            results = dummy_results[:min(antall_resultater, len(dummy_results))]
             
             mcp_logger.info(f"Søk fullført. Fant {len(results)} resultater.")
             return results
         
         @self.mcp.tool()
-        async def get_document(id: str) -> str:
+        async def hent_lovtekst(lov_id: str) -> str:
             """
-            Hent komplett lovtekst basert på ID.
+            Hent komplett lovtekst eller forskrift basert på ID.
+            
+            BRUK DETTE VERKTØYET når du ønsker oppdatert informasjon om lovverk og forskrifter, hentet direkte fra lovdata.no.
+            
+            Dette verktøyet henter den fulle teksten til en lov, forskrift eller annet juridisk 
+            dokument fra Lovdata ved hjelp av dokumentets unike ID. Bruk dette verktøyet når du 
+            ønsker å se hele lovteksten etter å ha funnet relevante lover med sok_i_lovdata-verktøyet.
             
             Args:
-                id: ID for dokumentet som skal hentes
+                lov_id: Lovens unike identifikator (f.eks. "lov-1814-05-17-1" for Grunnloven)
                 
             Returns:
                 Fullstendig lovtekst som ren tekst
+                
+            Eksempel på bruk:
+                Hent hele teksten for Grunnloven: "lov-1814-05-17-1"
+                Hent hele teksten for Barnevernloven: "lov-1992-07-17-100"
             """
-            mcp_logger.info(f"Henter dokument med id: {id}")
+            mcp_logger.info(f"Henter lovtekst med id: {lov_id}")
             
             if USING_RETRIEVAL_GRAPH:
                 try:
-                    # Søk spesifikt etter dokumentet med det gitte ID-et
-                    docs = await retrieval.search_documents(f"id:{id}", limit=1)
+                    # Bruk hovedgrafen med spesifikk dokument-ID-spørring
+                    config = RunnableConfig(
+                        configurable={
+                            "retriever_provider": "pinecone",
+                            "embedding_model": "openai/text-embedding-3-small",
+                            "query_model": "openai/gpt-4o-mini",
+                            "response_model": "openai/gpt-4o-mini",
+                            "search_kwargs": {"k": 1}
+                        }
+                    )
                     
-                    if docs and len(docs) > 0:
-                        doc_content = docs[0].page_content
-                        mcp_logger.info(f"Dokument funnet: {id}")
-                        return doc_content
-                    else:
-                        mcp_logger.warning(f"Dokument ikke funnet: {id}")
+                    query = f"Hent lovtekst med id {lov_id}"
+                    mcp_logger.info(f"Invoker retrieval_graph for å hente dokument: {lov_id}")
+                    result = await retrieval_graph.ainvoke(
+                        {"messages": [HumanMessage(content=query)]},
+                        config,
+                    )
+                    
+                    # Logg resultatet for debugging
+                    mcp_logger.info(f"Graf-resultat ved dokumenthenting: {result.keys()}")
+                    
+                    if hasattr(result, 'documents') and result.documents:
+                        # Finn det første dokumentet som har riktig ID
+                        for doc in result.documents:
+                            if doc.metadata.get("id") == lov_id:
+                                mcp_logger.info(f"Dokument funnet: {lov_id}")
+                                return doc.page_content
+                        
+                        # Hvis vi ikke fant et dokument med riktig ID, returner innholdet av første dokument
+                        if result.documents:
+                            mcp_logger.warning(f"Dokument med ID {lov_id} ikke funnet, bruker første resultat")
+                            return result.documents[0].page_content
+                    
+                    mcp_logger.warning(f"Dokument ikke funnet: {lov_id}")
                 except Exception as e:
                     mcp_logger.error(f"Feil ved henting av dokument: {str(e)}")
                     mcp_logger.warning("Faller tilbake til dummy-implementasjon for dokumenthenting")
                     # Fall tilbake til dummy-implementasjon ved feil
             
             # Dummy-implementasjon for testing eller fallback
-            if id == "lov-1814-05-17-1":
+            if lov_id == "lov-1814-05-17-1":
                 return "Kongeriket Norges Grunnlov, gitt i riksforsamlingen på Eidsvoll den 17. mai 1814, slik den lyder etter senere endringer. § 1. Kongeriket Norge er et fritt, selvstendig, udelelig og uavhendelig rike."
-            elif id == "lov-1992-07-17-100":
+            elif lov_id == "lov-1992-07-17-100":
                 return "Lov om barneverntjenester (barnevernloven). Lovens formål er å sikre at barn og unge som lever under forhold som kan skade deres helse og utvikling, får nødvendig hjelp, omsorg og beskyttelse til rett tid."
             else:
-                return f"Lovtekst for {id} er ikke tilgjengelig."
+                return f"Lovtekst for {lov_id} er ikke tilgjengelig."
     
     def run(self):
         """Start MCP-serveren med valgt transport."""
