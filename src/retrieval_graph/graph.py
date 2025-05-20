@@ -38,9 +38,20 @@ async def analyze_and_route_query(
     messages = [
         {"role": "system", "content": configuration.router_system_prompt}
     ] + state.messages
-    response = cast(
-        Router, await model.with_structured_output(Router).ainvoke(messages)
-    )
+    try:
+        response = cast(
+            Router, await model.with_structured_output(Router).ainvoke(messages)
+        )
+        # Sikre at response har både 'type' og 'logic'
+        if 'type' not in response:
+            response['type'] = "lovspørsmål"  # Bruk lovspørsmål som standard
+        if 'logic' not in response:
+            response['logic'] = ""
+    except Exception as e:
+        # Hvis noe går galt med strukturert output, bruk standardverdier
+        print(f"Error in analyze_and_route_query: {e}")
+        response = Router(type="lovspørsmål", logic="")
+    
     return {"router": response}
 
 
@@ -59,11 +70,11 @@ def route_query(
         ValueError: If an unknown router type is encountered.
     """
     _type = state.router["type"]
-    if _type == "langchain":
+    if _type == "lovspørsmål":
         return "create_research_plan"
-    elif _type == "more-info":
+    elif _type == "mer-info":
         return "ask_for_more_info"
-    elif _type == "general":
+    elif _type == "generelt":
         return "respond_to_general_query"
     else:
         raise ValueError(f"Unknown router type {_type}")
@@ -144,13 +155,16 @@ async def create_research_plan(
     return {"steps": response["steps"], "documents": "delete"}
 
 
-async def conduct_research(state: AgentState) -> dict[str, Any]:
+async def conduct_research(
+    state: AgentState, *, config: RunnableConfig
+) -> dict[str, Any]:
     """Execute the first step of the research plan.
 
     This function takes the first step from the research plan and uses it to conduct research.
 
     Args:
         state (AgentState): The current state of the agent, including the research plan steps.
+        config (RunnableConfig): Configuration for the retriever and models.
 
     Returns:
         dict[str, list[str]]: A dictionary with 'documents' containing the research results and
@@ -160,7 +174,7 @@ async def conduct_research(state: AgentState) -> dict[str, Any]:
         - Invokes the researcher_graph with the first step of the research plan.
         - Updates the state with the retrieved documents and removes the completed step.
     """
-    result = await researcher_graph.ainvoke({"question": state.steps[0]})
+    result = await researcher_graph.ainvoke({"question": state.steps[0]}, config)
     return {"documents": result["documents"], "steps": state.steps[1:]}
 
 
@@ -212,17 +226,27 @@ builder.add_node(analyze_and_route_query)
 builder.add_node(ask_for_more_info)
 builder.add_node(respond_to_general_query)
 builder.add_node(conduct_research)
-builder.add_node(create_research_plan)
 builder.add_node(respond)
+builder.add_node(create_research_plan)
 
+# Add edges
 builder.add_edge(START, "analyze_and_route_query")
-builder.add_conditional_edges("analyze_and_route_query", route_query)
+builder.add_conditional_edges(
+    "analyze_and_route_query",
+    route_query,
+    {
+        "ask_for_more_info": "ask_for_more_info",
+        "respond_to_general_query": "respond_to_general_query",
+        "create_research_plan": "create_research_plan",
+    },
+)
 builder.add_edge("create_research_plan", "conduct_research")
-builder.add_conditional_edges("conduct_research", check_finished)
+builder.add_conditional_edges(
+    "conduct_research", check_finished, {"respond": "respond", "conduct_research": "conduct_research"}
+)
+builder.add_edge("respond", END)
 builder.add_edge("ask_for_more_info", END)
 builder.add_edge("respond_to_general_query", END)
-builder.add_edge("respond", END)
 
-# Compile into a graph object that you can invoke and deploy.
 graph = builder.compile()
 graph.name = "RetrievalGraph"

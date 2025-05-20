@@ -73,7 +73,10 @@ def make_pinecone_retriever(
     vstore = PineconeVectorStore.from_existing_index(
         os.environ["PINECONE_INDEX_NAME"], embedding=embedding_model
     )
-    yield vstore.as_retriever(search_kwargs=configuration.search_kwargs)
+    yield vstore.as_retriever(
+        search_kwargs=configuration.search_kwargs, 
+        content_key="page_content"
+    )
 
 
 @contextmanager

@@ -1,0 +1,13 @@
+{
+  "start_time": 1747772984.4255621,
+  "semantic_search": {
+    "success": false,
+    "duration": 47.127112865448,
+    "error": "Timeout ved venting p\u00e5 svar fra semantic_search etter 45 sekunder"
+  },
+  "overall": {
+    "success": false,
+    "message": "En eller flere tester feilet",
+    "duration": 47.12737798690796
+  }
+}

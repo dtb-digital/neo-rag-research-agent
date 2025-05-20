@@ -2,14 +2,12 @@
 """
 Kjør tester for Lovdata RAG-agent.
 
-Dette skriptet kjører alle tilgjengelige tester for RAG-agenten for norske lover,
-eller spesifikke tester etter ønske.
+Dette skriptet kjører testene for RAG-agenten for norske lover.
 
 Bruk:
-    python run_tests.py --all          # Kjør alle tester
-    python run_tests.py --pinecone     # Kjør kun Pinecone-test
-    python run_tests.py --mcp          # Kjør kun MCP-test
-    python run_tests.py --suite        # Kjør test-suiten
+    python run_tests.py --all     # Kjør alle tester
+    python run_tests.py --pinecone # Kjør bare Pinecone-test
+    python run_tests.py --mcp     # Kjør bare MCP-test
 """
 
 import os
@@ -23,10 +21,9 @@ from pathlib import Path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 
-# Tilgjengelige testskript
-TEST_PINECONE = os.path.join(SCRIPT_DIR, "test_pinecone_simple.py")
-TEST_MCP = os.path.join(SCRIPT_DIR, "test_mcp_simple.py")
-TEST_SUITE = os.path.join(SCRIPT_DIR, "test_suite.py")
+# Testskripter
+TEST_PINECONE = os.path.join(SCRIPT_DIR, "test_pinecone.py")
+TEST_MCP = os.path.join(SCRIPT_DIR, "test_mcp.py")
 
 def run_command(command, timeout=120):
     """Kjør en kommando og returner resultatet."""
@@ -37,10 +34,10 @@ def run_command(command, timeout=120):
     start_time = time.time()
     
     try:
+        # Sett opp miljøet for kommandoen
         env = os.environ.copy()
-        # Sett høyere loggnivå for testen
-        env['LOG_LEVEL'] = 'DEBUG'
         
+        # Kjør kommandoen
         result = subprocess.run(
             command,
             stdout=subprocess.PIPE,
@@ -84,56 +81,48 @@ def run_command(command, timeout=120):
         return False
 
 def run_pinecone_test():
-    """Kjør Pinecone-tilkoblingstest."""
+    """Kjør test av Pinecone-tilkobling."""
     return run_command([sys.executable, TEST_PINECONE])
 
-def run_mcp_test():
-    """Kjør MCP-server-test."""
-    return run_command([sys.executable, TEST_MCP], timeout=180)  # Øk timeout til 3 minutter
-
-def run_test_suite(args=None):
-    """Kjør test-suiten med valgfrie argumenter."""
-    cmd = [sys.executable, TEST_SUITE]
+def run_mcp_test(test_level="basic"):
+    """Kjør test av MCP-serveren."""
+    cmd = [sys.executable, TEST_MCP]
     
-    if args:
-        cmd.extend(args)
-    
-    return run_command(cmd, timeout=180)  # Lengre timeout for test-suite
+    if test_level != "basic":
+        cmd.append(f"--level={test_level}")
+        
+    return run_command(cmd, timeout=180)  # 3 minutter timeout
 
 def main():
     """Hovedfunksjon."""
     parser = argparse.ArgumentParser(description="Kjør tester for Lovdata RAG-agent")
     
-    # Legg til argumenter
+    # Testutvalg
     parser.add_argument("--all", action="store_true", help="Kjør alle tester")
     parser.add_argument("--pinecone", action="store_true", help="Kjør Pinecone-tilkoblingstest")
-    parser.add_argument("--mcp", action="store_true", help="Kjør MCP-server-test")
-    parser.add_argument("--suite", action="store_true", help="Kjør test-suiten")
-    parser.add_argument("--suite-args", type=str, help="Argumenter til test-suiten (i anførselstegn)")
+    parser.add_argument("--mcp", action="store_true", help="Kjør MCP-servertest")
+    
+    # MCP testkonfigurasjon
+    parser.add_argument("--mcp-level", choices=["minimal", "basic", "full"], default="basic",
+                      help="Testnivå for MCP-testen (minimal, basic, full)")
     
     args = parser.parse_args()
     
-    # Hvis ingen tester er valgt, velg alle
-    if not (args.all or args.pinecone or args.mcp or args.suite):
+    # Hvis ingen tester er valgt, kjør alle
+    if not (args.all or args.pinecone or args.mcp):
         args.all = True
     
-    # Kjør valgte tester
+    # Lagre resultater
     results = {}
     
+    # Kjør valgte tester
     if args.all or args.pinecone:
-        print("\nTester Pinecone-tilkobling...")
+        print("Tester Pinecone-tilkobling...")
         results["pinecone"] = run_pinecone_test()
     
     if args.all or args.mcp:
-        print("\nTester MCP-server...")
-        results["mcp"] = run_mcp_test()
-    
-    if args.all or args.suite:
-        print("\nKjører test-suite...")
-        suite_args = []
-        if args.suite_args:
-            suite_args = args.suite_args.split()
-        results["suite"] = run_test_suite(suite_args)
+        print("Tester MCP-server...")
+        results["mcp"] = run_mcp_test(test_level=args.mcp_level)
     
     # Oppsummering
     print("\n" + "="*80)
