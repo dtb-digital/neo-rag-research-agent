@@ -23,7 +23,7 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
 EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "1536"))
 
 # Logging
-LOG_LEVEL = os.getenv("LOG_LEVEL", "info").lower()
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 DEBUG = os.getenv("DEBUG", "false").lower() in ("true", "1", "t")
 
 # MCP konfigurasjon
