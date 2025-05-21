@@ -38,8 +38,8 @@ def setup_logger(name: str, level: Optional[str] = None) -> logging.Logger:
     if logger.hasHandlers():
         logger.handlers.clear()
     
-    # Opprett handler for stdout
-    handler = logging.StreamHandler(sys.stdout)
+    # Opprett handler for stderr i stedet for stdout for å unngå å forstyrre JSON-kommunikasjon
+    handler = logging.StreamHandler(sys.stderr)
     
     # Definer format
     if DEBUG:
