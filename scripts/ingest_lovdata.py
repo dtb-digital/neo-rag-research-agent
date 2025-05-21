@@ -316,7 +316,7 @@ def chunke_basert_pa_paragrafer(text: str, metadata: Dict[str, Any]) -> List[Doc
             "chunk_index": i,
             "chunk_id": i,
             "id": f"{metadata.get('lov_id', 'ukjent')}-paragraf-{paragraf_nr}",
-            "parent_id": f"kapittel-{kapittel_nr}" if kapittel_nr else None
+            "parent_id": f"kapittel-{kapittel_nr}" if kapittel_nr else ""
         })
         
         # Lag komplett tekst med kontekst
