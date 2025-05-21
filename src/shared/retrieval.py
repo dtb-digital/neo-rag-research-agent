@@ -7,6 +7,9 @@ vector store backends, specifically Elasticsearch, Pinecone, and MongoDB.
 import os
 from contextlib import contextmanager
 from typing import Generator
+import logging
+import json
+import traceback
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.runnables import RunnableConfig
@@ -14,23 +17,27 @@ from langchain_core.vectorstores import VectorStoreRetriever
 
 from shared.configuration import BaseConfiguration
 
+# Sett opp en global logger for retrieval-modulen
+logger = logging.getLogger("retrieval")
+
+# Konstant for dokumentstruktur
+TEXT_FIELD = "text"  # Vi standardiserer på dette feltet for dokumentinnhold
+
 ## Encoder constructors
 
 
 def make_text_encoder(model: str) -> Embeddings:
     """Connect to the configured text encoder."""
     provider, model = model.split("/", maxsplit=1)
-    match provider:
-        case "openai":
-            from langchain_openai import OpenAIEmbeddings
-
-            return OpenAIEmbeddings(model=model)
-        case "cohere":
-            from langchain_cohere import CohereEmbeddings
-
-            return CohereEmbeddings(model=model)  # type: ignore
-        case _:
-            raise ValueError(f"Unsupported embedding provider: {provider}")
+    
+    if provider == "openai":
+        from langchain_openai import OpenAIEmbeddings
+        return OpenAIEmbeddings(model=model)
+    elif provider == "cohere":
+        from langchain_cohere import CohereEmbeddings
+        return CohereEmbeddings(model=model)  # type: ignore
+    else:
+        raise ValueError(f"Unsupported embedding provider: {provider}")
 
 
 ## Retriever constructors
@@ -60,7 +67,11 @@ def make_elastic_retriever(
         embedding=embedding_model,
     )
 
-    yield vstore.as_retriever(search_kwargs=configuration.search_kwargs)
+    # Standardiser på TEXT_FIELD
+    yield vstore.as_retriever(
+        search_kwargs=configuration.search_kwargs,
+        content_key=TEXT_FIELD
+    )
 
 
 @contextmanager
@@ -70,10 +81,6 @@ def make_pinecone_retriever(
     """Configure this agent to connect to a specific pinecone index."""
     from langchain_pinecone import PineconeVectorStore
     import pinecone
-    import logging
-
-    # Sett opp logging
-    logger = logging.getLogger("pinecone_retriever")
     
     # Koble til Pinecone
     pc = pinecone.Pinecone(api_key=os.environ["PINECONE_API_KEY"])
@@ -82,37 +89,70 @@ def make_pinecone_retriever(
     index_name = os.environ.get("PINECONE_INDEX_NAME", "lovdata-paragraf-test")
     logger.info(f"Kobler til Pinecone indeks: {index_name}")
     
-    # Debug
+    # Logg miljøvariabler
     logger.info("Miljøvariabler:")
-    logger.info(f"PINECONE_API_KEY: {'SATT' if os.environ.get('PINECONE_API_KEY') else 'MANGLER'}")
+    logger.info(f"PINECONE_API_KEY: {'SATT' if os.environ.get('PINECONE_API_KEY') else 'IKKE SATT'}")
     logger.info(f"PINECONE_INDEX_NAME: {index_name}")
-    logger.info(f"OPENAI_API_KEY: {'SATT' if os.environ.get('OPENAI_API_KEY') else 'MANGLER'}")
+    logger.info(f"OPENAI_API_KEY: {'SATT' if os.environ.get('OPENAI_API_KEY') else 'IKKE SATT'}")
     
-    # Bruk from_existing_index som ser ut til å håndtere feltene mer fleksibelt
-    logger.info("Bruker PineconeVectorStore.from_existing_index for bedre feltkompatibilitet")
-    vstore = PineconeVectorStore.from_existing_index(
-        index_name=index_name,
-        embedding=embedding_model,
-        text_key="text"  # Bruk text for nye dokumenter i den nye indeksen
-    )
-    logger.info("PineconeVectorStore opprettet med text_key='text'")
-    
-    # Debug vstore
-    if hasattr(vstore, '_text_key'):
-        logger.info(f"VectorStore _text_key: {vstore._text_key}")
-    
-    # Opprett retriever med content_key="text"
-    retriever = vstore.as_retriever(
-        search_kwargs=configuration.search_kwargs,
-        content_key="text"  # Spesifiser hvilken feltnøkkel som inneholder dokumentteksten
-    )
-    logger.info(f"Retriever opprettet med search_kwargs: {configuration.search_kwargs} og content_key='text'")
-    
-    # Debug retriever
-    if hasattr(retriever, 'vectorstore') and hasattr(retriever.vectorstore, '_content_key'):
-        logger.info(f"Retriever content_key: {retriever.vectorstore._content_key}")
-    
-    yield retriever
+    try:
+        # Opprett Pinecone Index og VectorStore
+        logger.info(f"Oppretter Pinecone Index og PineconeVectorStore med text_key='text'")
+        index = pc.Index(index_name)
+        
+        # Logg embedding model
+        logger.info(f"Embedding modell type: {type(embedding_model)}")
+        
+        # Opprett VectorStore med korrekt text_key parameter
+        vectorstore = PineconeVectorStore(
+            index=index,
+            embedding=embedding_model,
+            text_key="text"  # Dette er nøkkelen i Pinecone som inneholder dokumentteksten
+        )
+        
+        # Logg typer for debugging
+        logger.info(f"Pinecone Index type: {type(index)}")
+        logger.info(f"VectorStore type: {type(vectorstore)}")
+        
+        # Hent et eksempeldokument for å verifisere struktur hvis mulig
+        try:
+            # Prøv å hente et dokument for å verifisere strukturen
+            from pinecone import QueryFilter
+            results = index.query(
+                vector=[0.0] * 1536,  # Dummy vector
+                top_k=1,
+                include_metadata=True
+            )
+            if results.matches and len(results.matches) > 0:
+                sample_doc = results.matches[0]
+                logger.info(f"Eksempel på dokumentstruktur fra Pinecone:")
+                logger.info(f"ID: {sample_doc.id}")
+                logger.info(f"Metadata nøkler: {list(sample_doc.metadata.keys()) if sample_doc.metadata else 'Ingen metadata'}")
+                if "text" in sample_doc.metadata:
+                    logger.info("BEKREFTET: 'text' finnes i metadata")
+                else:
+                    logger.warning("ADVARSEL: 'text' finnes IKKE i metadata")
+        except Exception as e:
+            logger.warning(f"Kunne ikke hente eksempeldokument: {str(e)}")
+        
+        # Opprett retriever med korrekt content_key
+        retriever = vectorstore.as_retriever(
+            search_kwargs={"k": 5},
+            content_key="text"  # Forteller retrieveren å bruke 'text' feltet fra Pinecone
+        )
+        
+        logger.info(f"Retriever opprettet: {type(retriever)}")
+        
+        try:
+            yield retriever
+        finally:
+            # Gjør nødvendig cleanup her hvis det trengs
+            pass
+            
+    except Exception as e:
+        logger.error(f"Feil ved oppretting av Pinecone retriever: {str(e)}")
+        logger.error(f"Stack trace: {traceback.format_exc()}")
+        raise
 
 
 @contextmanager
@@ -127,7 +167,12 @@ def make_mongodb_retriever(
         namespace="langgraph_retrieval_agent.default",
         embedding=embedding_model,
     )
-    yield vstore.as_retriever(search_kwargs=configuration.search_kwargs)
+    
+    # Standardiser på TEXT_FIELD
+    yield vstore.as_retriever(
+        search_kwargs=configuration.search_kwargs,
+        content_key=TEXT_FIELD
+    )
 
 
 @contextmanager
@@ -137,22 +182,20 @@ def make_retriever(
     """Create a retriever for the agent, based on the current configuration."""
     configuration = BaseConfiguration.from_runnable_config(config)
     embedding_model = make_text_encoder(configuration.embedding_model)
-    match configuration.retriever_provider:
-        case "elastic" | "elastic-local":
-            with make_elastic_retriever(configuration, embedding_model) as retriever:
-                yield retriever
-
-        case "pinecone":
-            with make_pinecone_retriever(configuration, embedding_model) as retriever:
-                yield retriever
-
-        case "mongodb":
-            with make_mongodb_retriever(configuration, embedding_model) as retriever:
-                yield retriever
-
-        case _:
-            raise ValueError(
-                "Unrecognized retriever_provider in configuration. "
-                f"Expected one of: {', '.join(BaseConfiguration.__annotations__['retriever_provider'].__args__)}\n"
-                f"Got: {configuration.retriever_provider}"
-            )
+    
+    provider = configuration.retriever_provider
+    if provider == "elastic" or provider == "elastic-local":
+        with make_elastic_retriever(configuration, embedding_model) as retriever:
+            yield retriever
+    elif provider == "pinecone":
+        with make_pinecone_retriever(configuration, embedding_model) as retriever:
+            yield retriever
+    elif provider == "mongodb":
+        with make_mongodb_retriever(configuration, embedding_model) as retriever:
+            yield retriever
+    else:
+        raise ValueError(
+            "Unrecognized retriever_provider in configuration. "
+            f"Expected one of: {', '.join(BaseConfiguration.__annotations__['retriever_provider'].__args__)}\n"
+            f"Got: {configuration.retriever_provider}"
+        )

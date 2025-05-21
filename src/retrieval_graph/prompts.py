@@ -132,7 +132,7 @@ ikke en del av samtalen med brukeren.
 
 <context>
     {context}
-<context/>"""
+</context>"""
 
 # Researcher graph
 

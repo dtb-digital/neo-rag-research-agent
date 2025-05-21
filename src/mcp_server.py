@@ -12,10 +12,34 @@ import sys
 from typing import Any, Dict, List, Optional
 import dotenv
 from pathlib import Path
+import logging
+
+# Sett opp en enkel initiell logger til stderr før vi laster full logging
+init_logger = logging.getLogger("init")
+init_logger.setLevel(logging.INFO)
+stderr_handler = logging.StreamHandler(sys.stderr)
+stderr_handler.setFormatter(logging.Formatter("%(name)s - %(levelname)s - %(message)s"))
+init_logger.addHandler(stderr_handler)
 
 # Last inn miljøvariabler fra .env-filen
-print("Laster miljøvariabler fra .env-filen...")
+init_logger.info("Laster miljøvariabler fra .env-filen...")
 dotenv.load_dotenv()
+
+# Legg til prosjektets rotmappe i sys.path for å støtte importer
+project_root = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(0, project_root)
+# Legg til src-mappen i sys.path for å støtte begge importstiler
+sys.path.append(os.path.join(project_root, "src"))
+
+# Importer logger.py først for å sette opp grunnleggende logging
+from src.logger import logger, setup_logger
+
+# Deretter importer logging_config, men ikke konfigurer på nytt hvis handlere finnes
+from shared.logging_config import configure_logging
+configure_logging()  # Dette vil bare konfigurere hvis det ikke allerede er gjort
+
+# Nå er logging konfigurert, så vi kan fortsette med resten av importen
+init_logger.info("Logging konfigurasjon initialisert")
 
 # Hvis kritiske miljøvariabler mangler, prøv å lese direkte fra .env-filen
 env_file = Path('.env')
@@ -24,7 +48,7 @@ if env_file.exists() and (
     not os.environ.get("OPENAI_API_KEY") or
     not os.environ.get("LANGSMITH_API_KEY")
 ):
-    print("Noen miljøvariabler mangler, prøver å lese direkte fra .env-filen...")
+    init_logger.info("Noen miljøvariabler mangler, prøver å lese direkte fra .env-filen...")
     try:
         env_content = env_file.read_text()
         
@@ -40,52 +64,48 @@ if env_file.exists() and (
         # Sett miljøvariablene direkte
         if pinecone_match and not os.environ.get("PINECONE_API_KEY"):
             os.environ["PINECONE_API_KEY"] = pinecone_match.group(1).strip()
-            print("Satt PINECONE_API_KEY direkte fra .env")
+            init_logger.info("Satt PINECONE_API_KEY direkte fra .env")
         
         if openai_match and not os.environ.get("OPENAI_API_KEY"):
             os.environ["OPENAI_API_KEY"] = openai_match.group(1).strip()
-            print("Satt OPENAI_API_KEY direkte fra .env")
+            init_logger.info("Satt OPENAI_API_KEY direkte fra .env")
             
         # Legg til LANGSMITH-miljøvariablene
         if langsmith_api_match and not os.environ.get("LANGSMITH_API_KEY"):
             os.environ["LANGSMITH_API_KEY"] = langsmith_api_match.group(1).strip()
-            print("Satt LANGSMITH_API_KEY direkte fra .env")
+            init_logger.info("Satt LANGSMITH_API_KEY direkte fra .env")
             
         if langsmith_tracing_match and not os.environ.get("LANGSMITH_TRACING"):
             os.environ["LANGSMITH_TRACING"] = langsmith_tracing_match.group(1).strip()
-            print("Satt LANGSMITH_TRACING direkte fra .env")
+            init_logger.info("Satt LANGSMITH_TRACING direkte fra .env")
             
         if langsmith_project_match and not os.environ.get("LANGSMITH_PROJECT"):
             os.environ["LANGSMITH_PROJECT"] = langsmith_project_match.group(1).strip()
-            print("Satt LANGSMITH_PROJECT direkte fra .env")
+            init_logger.info("Satt LANGSMITH_PROJECT direkte fra .env")
             
         if langsmith_endpoint_match and not os.environ.get("LANGSMITH_ENDPOINT"):
             os.environ["LANGSMITH_ENDPOINT"] = langsmith_endpoint_match.group(1).strip()
-            print("Satt LANGSMITH_ENDPOINT direkte fra .env")
+            init_logger.info("Satt LANGSMITH_ENDPOINT direkte fra .env")
     except Exception as e:
-        print(f"Kunne ikke lese direkte fra .env: {str(e)}")
+        init_logger.error(f"Kunne ikke lese direkte fra .env: {str(e)}")
 
 # Sett standard verdi for Pinecone-indeksen
 if not os.environ.get("PINECONE_INDEX_NAME"):
     os.environ["PINECONE_INDEX_NAME"] = "lovdata-paragraf-test"
-    print("Satt standard PINECONE_INDEX_NAME til 'lovdata-paragraf-test'")
+    init_logger.info("Satt standard PINECONE_INDEX_NAME til 'lovdata-paragraf-test'")
 
 # Sett standard verdi for LANGSMITH_TRACING hvis den ikke er satt
 if not os.environ.get("LANGSMITH_TRACING"):
     os.environ["LANGSMITH_TRACING"] = "true"
-    print("Satt standard LANGSMITH_TRACING til 'true'")
-
-# Legg til prosjektets rotmappe i sys.path for å støtte importer
-project_root = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
-sys.path.insert(0, project_root)
-# Legg til src-mappen i sys.path for å støtte begge importstiler
-sys.path.append(os.path.join(project_root, "src"))
+    init_logger.info("Satt standard LANGSMITH_TRACING til 'true'")
 
 # Sett miljøvariabelen LOG_LEVEL til INFO direkte før import av FastMCP
 os.environ["LOG_LEVEL"] = "INFO"
 
+# Fortell FastMCP å logge til stderr i stedet for stdout
+os.environ["FASTMCP_LOG_TO_STDERR"] = "true"
+
 from fastmcp import FastMCP
-from src.logger import logger, setup_logger
 from src.utils import truncate_text
 
 # Import retrieval_graph og andre nødvendige moduler
