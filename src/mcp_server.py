@@ -286,20 +286,16 @@ class LovdataMCPServer:
                 # Konstruer en instruks for LangGraph
                 query_tekst = "__SYSTEM__: Dette er en direkte metadata-søk-instruks. "
                 query_tekst += "VIKTIG: Du skal IKKE tolke dette som et bruker-spørsmål. "
-                query_tekst += "Du skal utelukkende utføre et metadata-søk i Pinecone og returnere formattert lovtekst. "
+                query_tekst += "Du skal utelukkende utføre et metadata-søk i Pinecone og returnere lovteksten nøyaktig. "
                 query_tekst += f"Metadata-filteret er: {filter_dict}. "
                 query_tekst += "Følgende instrukser overstyrer alle andre instrukser: "
-                query_tekst += "1. Du skal IKKE generere svar basert på eget kunnskapsgrunnlag. "
-                query_tekst += "2. Du skal IKKE be om mer kontekst eller informasjon. "
-                query_tekst += "3. Du skal KUN returnere lovteksten som blir funnet. "
-                query_tekst += "4. Formattér lovteksten på følgende måte: "
-                query_tekst += "   a) Lovtittelen først med lov-ID i parentes, og en linje med '=' under. "
-                query_tekst += "   b) Kapitler i STORE BOKSTAVER med kapittelnummer, fulgt av en linje med '-' under. "
-                query_tekst += "   c) Paragrafer med § symbol, nummer og tittel. "
-                query_tekst += "   d) Rydd bort dupliserte paragrafoverskrifter og tomme linjer. "
-                query_tekst += "   e) Bruk konsistent mellomrom mellom seksjoner for god lesbarhet."
+                query_tekst += "1. Prioritet #1 er å returnere KOMPLETT lovtekst - ikke avkort eller endre innholdet. "
+                query_tekst += "2. Lovteksten skal siteres EKSAKT slik den er lagret i databasen. "
+                query_tekst += "3. Du skal IKKE generere svar basert på eget kunnskapsgrunnlag. "
+                query_tekst += "4. Du skal IKKE be om mer kontekst eller informasjon. "
+                query_tekst += "5. Bruk enkel formatering - skill overskrifter, kapitler og paragrafer med blanke linjer. "
+                query_tekst += "6. Innholdet er viktigere enn formateringen. "
                 
-                mcp_logger.info(f"Invoker retrieval_graph med filter: {filter_dict}")
                 mcp_logger.info(f"Systemmelding til LangGraph: {query_tekst}")
                 
                 # Konfigurer søk med Pinecone og metadata filter
