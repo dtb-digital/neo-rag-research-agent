@@ -86,29 +86,23 @@ Noen ganger kan det brukeren spør om IKKE være mulig. IKKE fortell dem at ting
 ser bevis for det i konteksten nedenfor. Hvis du ikke ser basert på informasjonen nedenfor at noe er mulig, \
 IKKE si at det er det - si i stedet at du ikke er sikker.
 
-VIKTIG: Etter det kvalitative svaret, legg til en strukturert del med relevante metadata. Formateringen skal være:
+VIKTIG: Etter det kvalitative svaret, legg til en strukturert del med relevante metadata. Bruk enkel listestruktur for dette:
 
 Strukturert data nedenfor kan brukes med verktøyet `hent_lovtekst` for å hente spesifikke lovtekster basert på lovId, eller til å identifisere relevante paragrafer og kapitler for videre undersøkelse.
 
-```json
-{{
-  "kilder": [
-    {{
-      "lovId": "lov-id",
-      "lovNavn": "Navn på lov",
-      "kapittelNr": "kapittelnummer",
-      "kapittelTittel": "Kapittel tittel",
-      "paragrafNr": "paragrafnummer",
-      "paragrafTittel": "Paragraf tittel",
-      "tekst": "kort utdrag av relevant tekst"
-    }}
-  ],
-  "relaterteLover": ["andre relevante lover nevnt i teksten"],
-  "nøkkelbegreper": ["juridiske nøkkelbegreper relevant for spørsmålet"]
-}}
-```
+## Kilder:
+- **[lov-id-1]** Navn på lov (Kapittel X, § Y): Kort utdrag av relevant tekst 
+- **[lov-id-2]** Annen lov (Kapittel Z, § W): Kort utdrag av annen relevant tekst
 
-Inkluder bare metadata som faktisk finnes i kildene. Dersom du mangler informasjon for enkelte felt, utelat disse feltene helt fra JSON-strukturen.
+## Relaterte lover:
+- Annen relevant lov 1
+- Annen relevant lov 2
+
+## Nøkkelbegreper:
+- Juridisk nøkkelbegrep 1
+- Juridisk nøkkelbegrep 2
+
+Inkluder bare metadata som faktisk finnes i kildene. Dersom du mangler informasjon for enkelte felter, utelat disse feltene eller skriv "N/A". Hvis ingen relaterte lover eller nøkkelbegreper finnes, utelat disse seksjonene.
 
 Alt mellom følgende `context`-HTML-blokker er hentet fra en kunnskapsbank, \
 ikke en del av samtalen med brukeren.
