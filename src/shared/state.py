@@ -66,7 +66,35 @@ def reduce_docs(
                     existing_ids.add(item_id)
 
             elif isinstance(item, Document):
-                item_id = item.metadata.get("uuid", "")
+                # Generer en mer robust unik ID som kombinerer flere felt for å minimere duplikatfjerning
+                doc_id_parts = []
+                
+                # Legg til dokument-ID hvis tilgjengelig
+                if item.metadata.get("id"):
+                    doc_id_parts.append(f"id:{item.metadata['id']}")
+                    
+                # Legg til paragraf-nummer hvis tilgjengelig
+                if item.metadata.get("paragraf_nr"):
+                    doc_id_parts.append(f"p:{item.metadata['paragraf_nr']}")
+                    
+                # Legg til kapittel hvis tilgjengelig
+                if item.metadata.get("kapittel_nr"):
+                    doc_id_parts.append(f"k:{item.metadata['kapittel_nr']}")
+                    
+                # Legg til chunk_id hvis tilgjengelig
+                if item.metadata.get("chunk_id"):
+                    doc_id_parts.append(f"c:{item.metadata['chunk_id']}")
+                
+                # Legg til en kort hash av innholdet
+                content_hash = _generate_uuid(item.page_content[:50])[:8]
+                doc_id_parts.append(f"h:{content_hash}")
+                
+                # Kombiner alle deler til en unik ID
+                doc_specific_id = "_".join(doc_id_parts) if doc_id_parts else item.page_content[:50]
+                
+                # Generer endelig ID
+                item_id = _generate_uuid(doc_specific_id) if doc_specific_id else item.metadata.get("uuid", "")
+                
                 if not item_id:
                     item_id = _generate_uuid(item.page_content)
                     new_item = item.copy(deep=True)

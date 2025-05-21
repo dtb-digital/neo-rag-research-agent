@@ -203,6 +203,22 @@ async def conduct_research(
     
     from retrieval_graph.researcher_graph.state import ResearcherState
     from shared.retrieval import make_retriever
+    import logging
+    
+    # Sett opp logging for denne funksjonen
+    logger = logging.getLogger("conduct_research")
+    logger.setLevel(logging.DEBUG)  # Sett loggingsnivå til DEBUG for mer detaljer
+    logger.info(f"Starter forskningsprosess på steg: {state.steps[0]}")
+    
+    # Sjekk miljøvariabler
+    import os
+    pinecone_api_key = os.environ.get("PINECONE_API_KEY", "")
+    openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+    pinecone_index_name = os.environ.get("PINECONE_INDEX_NAME", "lovdata-paragraf-test")
+    
+    logger.info(f"Miljøvariabler: PINECONE_API_KEY {'funnet' if pinecone_api_key else 'MANGLER'}")
+    logger.info(f"Miljøvariabler: OPENAI_API_KEY {'funnet' if openai_api_key else 'MANGLER'}")
+    logger.info(f"Bruker Pinecone indeks: {pinecone_index_name}")
     
     # Initialize researcher state with the first step as question
     researcher_state = ResearcherState(question=state.steps[0])
@@ -221,17 +237,78 @@ async def conduct_research(
     ]
     response = cast(Response, await structured_model.ainvoke(messages))
     queries = response["queries"]
+    logger.info(f"Genererte {len(queries)} spørringer: {queries}")
     
     # Run retrieval for each query
     all_docs = []
-    with make_retriever(config) as retriever:
-        for query in queries:
-            docs = await retriever.ainvoke(query, config)
-            all_docs.extend(docs)
+    try:
+        with make_retriever(config) as retriever:
+            # Logg retriever-informasjon
+            logger.info(f"Retriever type: {type(retriever)}")
+            if hasattr(retriever, 'vectorstore'):
+                logger.info(f"VectorStore type: {type(retriever.vectorstore)}")
+                
+                # Sjekk content_key
+                if hasattr(retriever.vectorstore, '_content_key'):
+                    logger.info(f"VectorStore content_key: {retriever.vectorstore._content_key}")
+                else:
+                    logger.warning("VectorStore mangler _content_key attributt")
+                    
+                # Sjekk text_key
+                if hasattr(retriever.vectorstore, '_text_key'):
+                    logger.info(f"VectorStore text_key: {retriever.vectorstore._text_key}")
+                else:
+                    logger.warning("VectorStore mangler _text_key attributt")
+            
+            # Sikre at content_key er satt til "text"
+            if hasattr(retriever, 'vectorstore') and hasattr(retriever.vectorstore, '_content_key'):
+                if retriever.vectorstore._content_key != "text":
+                    logger.warning(f"Retriever bruker content_key={retriever.vectorstore._content_key}, men forventer 'text'. Setter det til 'text'...")
+                    retriever.vectorstore._content_key = "text"
+                    logger.info(f"Satt content_key til 'text', ny verdi: {retriever.vectorstore._content_key}")
+            
+            for query in queries:
+                logger.info(f"Utfører søk med spørring: {query}")
+                docs = await retriever.ainvoke(query, config)
+                logger.info(f"Søk resulterte i {len(docs)} dokumenter")
+                
+                # Logg mer detaljert om de første par dokumentene
+                for i, doc in enumerate(docs[:2]):
+                    logger.info(f"Dokument {i} type: {type(doc)}")
+                    logger.info(f"Dokument {i} attributter: {dir(doc)}")
+                    
+                    # Sjekk alle nøkkelattributter
+                    if hasattr(doc, 'page_content'):
+                        logger.info(f"Dokument {i} har page_content ({len(doc.page_content)} tegn)")
+                        logger.debug(f"page_content innhold: {doc.page_content[:100]}...")
+                    else:
+                        logger.warning(f"Dokument {i} mangler page_content")
+                        
+                    if hasattr(doc, 'text'):
+                        logger.info(f"Dokument {i} har text-felt ({len(doc.text)} tegn)")
+                        logger.debug(f"text innhold: {doc.text[:100]}...")
+                    else:
+                        logger.warning(f"Dokument {i} mangler text-felt")
+                    
+                    # Sjekk metadata
+                    metadata_summary = {}
+                    if hasattr(doc, 'metadata'):
+                        metadata_summary = {k: v for k, v in doc.metadata.items() if k in ['lov_id', 'lov_navn', 'paragraf_nr', 'kapittel_nr']}
+                        logger.info(f"Dokument {i} metadata: {metadata_summary}")
+                    else:
+                        logger.warning(f"Dokument {i} mangler metadata")
+                
+                all_docs.extend(docs)
+    except Exception as e:
+        logger.error(f"Feil under retrieval: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
     
     # Her bruker vi reduce_docs for å fjerne duplikater, 
     # men må kalle den riktig, først med None og deretter med dokumentene
+    logger.info(f"Totalt {len(all_docs)} dokumenter før deduplisering")
     unique_docs = reduce_docs(None, all_docs)
+    logger.info(f"Totalt {len(unique_docs)} dokumenter etter deduplisering")
     
     # Return updated state
     remaining_steps = state.steps[1:] if len(state.steps) > 1 else []

@@ -47,7 +47,7 @@ async def test_direct_pinecone():
     vstore2 = PineconeVectorStore(
         index=index,
         embedding=embedding_model,
-        text_key="page_content"  # Spesifiser eksplisitt hvor teksten ligger
+        text_key="text"  # Bruk "text" for å matche feltnavnet i Pinecone
     )
     
     # Test begge retrieverne
@@ -57,7 +57,7 @@ async def test_direct_pinecone():
     print(f"\nSøker med retriever1 (from_existing_index): '{query}'")
     retriever1 = vstore1.as_retriever(
         search_kwargs={"k": 5},
-        content_key="page_content"  # Spesifiser content_key
+        content_key="text"  # Spesifiser content_key som "text" for å matche eksisterende dokument feltnavn
     )
     
     try:
@@ -79,6 +79,13 @@ async def test_direct_pinecone():
             print(f"  Metadata nøkler: {list(docs1[0].metadata.keys())}")
             print(f"  Har page_content: {'page_content' in dir(docs1[0])}")
             print(f"  Innhold (utdrag): {docs1[0].page_content[:100] if hasattr(docs1[0], 'page_content') else 'Ingen page_content funnet'}...")
+            
+            # Legg til ekstra debug for å se dokumentets attributter
+            print("\nDocument Attributter:")
+            doc = docs1[0]
+            print(f"  Dir(document): {dir(doc)}")
+            # Sjekk om dokumentet har riktige felt for å vises i Langsmith
+            print(f"  Document.__dict__: {doc.__dict__}")
     except Exception as e:
         print(f"Feil ved søk med retriever1: {str(e)}")
     

@@ -82,6 +82,12 @@ def make_pinecone_retriever(
     index_name = os.environ.get("PINECONE_INDEX_NAME", "lovdata-paragraf-test")
     logger.info(f"Kobler til Pinecone indeks: {index_name}")
     
+    # Debug
+    logger.info("Miljøvariabler:")
+    logger.info(f"PINECONE_API_KEY: {'SATT' if os.environ.get('PINECONE_API_KEY') else 'MANGLER'}")
+    logger.info(f"PINECONE_INDEX_NAME: {index_name}")
+    logger.info(f"OPENAI_API_KEY: {'SATT' if os.environ.get('OPENAI_API_KEY') else 'MANGLER'}")
+    
     # Bruk from_existing_index som ser ut til å håndtere feltene mer fleksibelt
     logger.info("Bruker PineconeVectorStore.from_existing_index for bedre feltkompatibilitet")
     vstore = PineconeVectorStore.from_existing_index(
@@ -91,8 +97,20 @@ def make_pinecone_retriever(
     )
     logger.info("PineconeVectorStore opprettet med text_key='text'")
     
-    retriever = vstore.as_retriever(search_kwargs=configuration.search_kwargs)
-    logger.info(f"Retriever opprettet med search_kwargs: {configuration.search_kwargs}")
+    # Debug vstore
+    if hasattr(vstore, '_text_key'):
+        logger.info(f"VectorStore _text_key: {vstore._text_key}")
+    
+    # Opprett retriever med content_key="text"
+    retriever = vstore.as_retriever(
+        search_kwargs=configuration.search_kwargs,
+        content_key="text"  # Spesifiser hvilken feltnøkkel som inneholder dokumentteksten
+    )
+    logger.info(f"Retriever opprettet med search_kwargs: {configuration.search_kwargs} og content_key='text'")
+    
+    # Debug retriever
+    if hasattr(retriever, 'vectorstore') and hasattr(retriever.vectorstore, '_content_key'):
+        logger.info(f"Retriever content_key: {retriever.vectorstore._content_key}")
     
     yield retriever
 

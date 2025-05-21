@@ -10,6 +10,70 @@ import json
 import os
 import sys
 from typing import Any, Dict, List, Optional
+import dotenv
+from pathlib import Path
+
+# Last inn miljøvariabler fra .env-filen
+print("Laster miljøvariabler fra .env-filen...")
+dotenv.load_dotenv()
+
+# Hvis kritiske miljøvariabler mangler, prøv å lese direkte fra .env-filen
+env_file = Path('.env')
+if env_file.exists() and (
+    not os.environ.get("PINECONE_API_KEY") or 
+    not os.environ.get("OPENAI_API_KEY") or
+    not os.environ.get("LANGSMITH_API_KEY")
+):
+    print("Noen miljøvariabler mangler, prøver å lese direkte fra .env-filen...")
+    try:
+        env_content = env_file.read_text()
+        
+        # Hent nøkler med regex
+        import re
+        pinecone_match = re.search(r'PINECONE_API_KEY=(.+)', env_content)
+        openai_match = re.search(r'OPENAI_API_KEY=(.+)', env_content)
+        langsmith_api_match = re.search(r'LANGSMITH_API_KEY=(.+)', env_content)
+        langsmith_tracing_match = re.search(r'LANGSMITH_TRACING=(.+)', env_content)
+        langsmith_project_match = re.search(r'LANGSMITH_PROJECT=(.+)', env_content)
+        langsmith_endpoint_match = re.search(r'LANGSMITH_ENDPOINT=(.+)', env_content)
+        
+        # Sett miljøvariablene direkte
+        if pinecone_match and not os.environ.get("PINECONE_API_KEY"):
+            os.environ["PINECONE_API_KEY"] = pinecone_match.group(1).strip()
+            print("Satt PINECONE_API_KEY direkte fra .env")
+        
+        if openai_match and not os.environ.get("OPENAI_API_KEY"):
+            os.environ["OPENAI_API_KEY"] = openai_match.group(1).strip()
+            print("Satt OPENAI_API_KEY direkte fra .env")
+            
+        # Legg til LANGSMITH-miljøvariablene
+        if langsmith_api_match and not os.environ.get("LANGSMITH_API_KEY"):
+            os.environ["LANGSMITH_API_KEY"] = langsmith_api_match.group(1).strip()
+            print("Satt LANGSMITH_API_KEY direkte fra .env")
+            
+        if langsmith_tracing_match and not os.environ.get("LANGSMITH_TRACING"):
+            os.environ["LANGSMITH_TRACING"] = langsmith_tracing_match.group(1).strip()
+            print("Satt LANGSMITH_TRACING direkte fra .env")
+            
+        if langsmith_project_match and not os.environ.get("LANGSMITH_PROJECT"):
+            os.environ["LANGSMITH_PROJECT"] = langsmith_project_match.group(1).strip()
+            print("Satt LANGSMITH_PROJECT direkte fra .env")
+            
+        if langsmith_endpoint_match and not os.environ.get("LANGSMITH_ENDPOINT"):
+            os.environ["LANGSMITH_ENDPOINT"] = langsmith_endpoint_match.group(1).strip()
+            print("Satt LANGSMITH_ENDPOINT direkte fra .env")
+    except Exception as e:
+        print(f"Kunne ikke lese direkte fra .env: {str(e)}")
+
+# Sett standard verdi for Pinecone-indeksen
+if not os.environ.get("PINECONE_INDEX_NAME"):
+    os.environ["PINECONE_INDEX_NAME"] = "lovdata-paragraf-test"
+    print("Satt standard PINECONE_INDEX_NAME til 'lovdata-paragraf-test'")
+
+# Sett standard verdi for LANGSMITH_TRACING hvis den ikke er satt
+if not os.environ.get("LANGSMITH_TRACING"):
+    os.environ["LANGSMITH_TRACING"] = "true"
+    print("Satt standard LANGSMITH_TRACING til 'true'")
 
 # Legg til prosjektets rotmappe i sys.path for å støtte importer
 project_root = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
@@ -46,6 +110,29 @@ class LovdataMCPServer:
     def __init__(self):
         """Initialiser MCP-serveren."""
         self.mcp = FastMCP("Lovdata RAG")
+        
+        # Logg miljøvariabel-status for debugging
+        pinecone_api_key = os.environ.get("PINECONE_API_KEY", "")
+        openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+        pinecone_index_name = os.environ.get("PINECONE_INDEX_NAME", "lovdata-paragraf-test")
+        langsmith_api_key = os.environ.get("LANGSMITH_API_KEY", "")
+        langsmith_tracing = os.environ.get("LANGSMITH_TRACING", "")
+        langsmith_project = os.environ.get("LANGSMITH_PROJECT", "")
+        
+        mcp_logger.info(f"Miljøvariabler: PINECONE_API_KEY {'funnet' if pinecone_api_key else 'MANGLER'}")
+        mcp_logger.info(f"Miljøvariabler: OPENAI_API_KEY {'funnet' if openai_api_key else 'MANGLER'}")
+        mcp_logger.info(f"Bruker Pinecone indeks: {pinecone_index_name}")
+        mcp_logger.info(f"Miljøvariabler: LANGSMITH_API_KEY {'funnet' if langsmith_api_key else 'MANGLER'}")
+        mcp_logger.info(f"Miljøvariabler: LANGSMITH_TRACING {'funnet' if langsmith_tracing else 'MANGLER'}")
+        mcp_logger.info(f"Miljøvariabler: LANGSMITH_PROJECT {'funnet' if langsmith_project else 'MANGLER'}")
+        
+        # Sjekk at kritiske miljøvariabler er satt
+        if not pinecone_api_key:
+            mcp_logger.error("PINECONE_API_KEY er ikke satt! Vektorsøk vil ikke fungere")
+        if not openai_api_key:
+            mcp_logger.error("OPENAI_API_KEY er ikke satt! Embedding og LLM vil ikke fungere")
+        if not langsmith_api_key and langsmith_tracing.lower() == "true":
+            mcp_logger.error("LANGSMITH_API_KEY er ikke satt, men LANGSMITH_TRACING er aktivert! LangSmith-sporing vil ikke fungere")
         
         # Registrer verktøy
         self._register_tools()

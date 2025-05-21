@@ -1,256 +1,169 @@
+"""Test direkte retrieval fra Pinecone og conduct_research funksjonen."""
+
 import os
 import sys
+import json
 import asyncio
-from typing import List, Dict, Any
-from pprint import pprint
-
-# Legg til src i Python-søkestien
-sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
-
-from langchain_core.runnables import RunnableConfig
-from langchain_core.messages import HumanMessage
-from langchain_core.documents import Document
-
-from retrieval_graph import graph
-from retrieval_graph.configuration import AgentConfiguration
-from retrieval_graph.state import AgentState, Router
-from shared.retrieval import make_retriever
-from shared.state import reduce_docs
-
-# Sett miljøvariabler hvis nødvendig
+import logging
+import traceback
 import dotenv
+
+# Last inn miljøvariabler fra .env-filen
+print("Laster miljøvariabler fra .env")
 dotenv.load_dotenv()
 
-async def test_router():
-    """Test at routeren klassifiserer spørsmålet riktig"""
-    print("\n=== TESTER ROUTER ===")
-    
-    config = RunnableConfig(
-        configurable={
-            "retriever_provider": "pinecone",
-            "embedding_model": "openai/text-embedding-3-small",
-            "query_model": "openai/gpt-4o-mini",
-            "response_model": "openai/gpt-4o-mini",
-        }
-    )
-    
-    query = "Hva er formålet med offentlighetsloven?"
-    print(f"Spørring: {query}")
-    
-    # Kaller analyze_and_route_query direkte
-    from retrieval_graph.graph import analyze_and_route_query
-    
-    # Opprett en enkel state
-    state = AgentState(messages=[HumanMessage(content=query)])
-    
-    # Kjør routing
-    result = await analyze_and_route_query(state, config=config)
-    
-    # Sjekk resultat
-    print(f"Router resultat: {result}")
-    return result
+# Riktig oppsett av Python-søkestien
+sys.path.insert(0, os.path.abspath("src"))
+os.environ["PYTHONPATH"] = os.path.abspath("src")
 
-async def test_research_plan():
-    """Test at forskningsplanen genereres riktig"""
-    print("\n=== TESTER FORSKNINGSPLAN ===")
-    
-    config = RunnableConfig(
-        configurable={
-            "retriever_provider": "pinecone",
-            "embedding_model": "openai/text-embedding-3-small",
-            "query_model": "openai/gpt-4o-mini",
-            "response_model": "openai/gpt-4o-mini",
-        }
-    )
-    
-    query = "Hva er formålet med offentlighetsloven?"
-    print(f"Spørring: {query}")
-    
-    # Kaller create_research_plan direkte
-    from retrieval_graph.graph import create_research_plan
-    
-    # Opprett en state med router-resultat
-    state = AgentState(
-        messages=[HumanMessage(content=query)],
-        router=Router(type="lovspørsmål", logic="")
-    )
-    
-    # Kjør plan-generering
-    result = await create_research_plan(state, config=config)
-    
-    # Sjekk resultat
-    print(f"Forskningsplan: {result}")
-    return result
+# Sett opp logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(), logging.FileHandler("debug_tests.log")],
+)
+logger = logging.getLogger("test_graph_debug")
 
-async def test_query_generation():
-    """Test at spørringer genereres riktig basert på forskningsplanen"""
-    print("\n=== TESTER QUERY-GENERERING ===")
-    
-    config = RunnableConfig(
-        configurable={
-            "retriever_provider": "pinecone",
-            "embedding_model": "openai/text-embedding-3-small",
-            "query_model": "openai/gpt-4o-mini",
-            "response_model": "openai/gpt-4o-mini",
-        }
-    )
-    
-    query = "Hva er formålet med offentlighetsloven?"
-    research_step = "Undersøk formålet med offentlighetsloven"
-    print(f"Forskningssteg: {research_step}")
-    
-    # Kode fra conduct_research-funksjonen
-    from retrieval_graph.researcher_graph.state import ResearcherState
-    from retrieval_graph.graph import AgentConfiguration
-    
-    # Initialiser researcher state med spørsmålet
-    researcher_state = ResearcherState(question=research_step)
-    
-    # Opprett konfigurasjonen
-    configuration = AgentConfiguration.from_runnable_config(config)
-    
-    # Last modell
-    from shared.utils import load_chat_model
-    model = load_chat_model(configuration.query_model)
-    
-    # Definer respons-typen
-    from typing import TypedDict
-    class Response(TypedDict):
-        queries: List[str]
-    
-    # Generer spørringer
-    structured_model = model.with_structured_output(Response)
-    messages = [
-        {"role": "system", "content": configuration.generate_queries_system_prompt},
-        {"role": "human", "content": researcher_state.question},
-    ]
-    
-    response = await structured_model.ainvoke(messages)
-    queries = response["queries"]
-    
-    # Sjekk resultat
-    print(f"Genererte spørringer: {queries}")
-    return queries
+# Imports
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_core.documents import Document
+from langchain_core.messages import HumanMessage
+import pinecone
+from langchain_pinecone import PineconeVectorStore
+from langchain_core.runnables import RunnableConfig
 
-async def test_retrieval():
-    """Test retrieval direkte med genererte spørringer"""
-    print("\n=== TESTER RETRIEVAL ===")
-    
-    config = RunnableConfig(
-        configurable={
-            "retriever_provider": "pinecone",
-            "embedding_model": "openai/text-embedding-3-small",
-            "query_model": "openai/gpt-4o-mini",
-            "response_model": "openai/gpt-4o-mini",
-            "search_kwargs": {"k": 5}
-        }
-    )
-    
-    # Test både genererte og hardkodede spørringer
-    queries = [
-        "formål offentlighetsloven", 
-        "offentlighetsloven paragraf 1",
-        "offentlighet innsyn hovedprinsipper",
-        "lov offentlighet åpenhet forvaltning"
-    ]
-    
-    all_docs = []
-    print(f"Kjører retrieval for {len(queries)} spørringer...")
-    
-    # Kjør retrieval for hver spørring
-    with make_retriever(config) as retriever:
-        for i, query in enumerate(queries):
-            print(f"\nSpørring {i+1}: '{query}'")
-            
-            # Debug: Skriv ut retriever-informasjon
-            print(f"Retriever type: {type(retriever)}")
-            print(f"Retriever content_key: {getattr(retriever, 'content_key', 'Ukjent')}")
-            
-            # Gjør søk
-            docs = await retriever.ainvoke(query, config)
-            
-            if docs:
-                print(f"✅ Fant {len(docs)} dokumenter!")
-                # Vis metadata for første dokument
-                if len(docs) > 0:
-                    print(f"Første dokument metadata: {docs[0].metadata}")
-                    print(f"Første dokument innhold (utdrag): {docs[0].page_content[:100]}...")
-                all_docs.extend(docs)
-            else:
-                print(f"❌ Ingen dokumenter funnet for '{query}'")
-    
-    # Sjekk reduksjon av duplikater
-    print(f"\nTotalt antall dokumenter før reduksjon: {len(all_docs)}")
-    unique_docs = reduce_docs(None, all_docs)
-    print(f"Antall unike dokumenter etter reduksjon: {len(unique_docs)}")
-    
-    return unique_docs
-
-async def test_full_research():
-    """Test hele conduct_research-funksjonen"""
-    print("\n=== TESTER FULL FORSKNINGSPROSESS ===")
-    
-    config = RunnableConfig(
-        configurable={
-            "retriever_provider": "pinecone",
-            "embedding_model": "openai/text-embedding-3-small",
-            "query_model": "openai/gpt-4o-mini",
-            "response_model": "openai/gpt-4o-mini",
-            "search_kwargs": {"k": 5}
-        }
-    )
-    
-    query = "Hva er formålet med offentlighetsloven?"
-    research_step = "Undersøk formålet med offentlighetsloven"
-    
-    # Kaller conduct_research direkte
-    from retrieval_graph.graph import conduct_research
-    
-    # Opprett en state med steps
-    state = AgentState(
-        messages=[HumanMessage(content=query)],
-        router=Router(type="lovspørsmål", logic=""),
-        steps=[research_step]
-    )
-    
-    print(f"Kjører conduct_research med state:\n{state}")
-    
-    # Kjør forskning
-    result = await conduct_research(state, config=config)
-    
-    # Sjekk resultat
-    print(f"Forskningstresultat:\nNye dokumenter: {len(result.get('documents', []))}")
-    print(f"Gjenværende steg: {result.get('steps', [])}")
-    
-    # Vis dokumentutdrag hvis noen ble funnet
-    if result.get('documents'):
-        print("\nFørste dokument:")
-        doc = result['documents'][0]
-        print(f"Metadata: {doc.metadata}")
-        print(f"Innhold (utdrag): {doc.page_content[:200]}...")
-    
-    return result
+# Prosjekt-imports - nå uten src. prefiks siden vi har lagt src til i Python-søkestien
+from retrieval_graph.graph import conduct_research  
+from shared.state import reduce_docs
+from retrieval_graph.state import AgentState, Router
 
 async def main():
-    """Kjør alle tester i rekkefølge for å identifisere rotårsaken til problemet"""
-    print("STARTER TESTING AV HOVEDGRAFEN\n")
+    """Kjør tester for Pinecone-retrieval og conduct_research."""
+    logger.info("=== START TEST_GRAPH_DEBUG ===")
     
-    # Test 1: Routeren
-    router_result = await test_router()
+    # Sjekk og verifiser at alle nødvendige miljøvariabler er lastet
+    pinecone_api_key = os.environ.get("PINECONE_API_KEY", "")
+    openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+    pinecone_index_name = os.environ.get("PINECONE_INDEX_NAME", "lovdata-paragraf-test")
     
-    # Test 2: Forskningsplan
-    plan_result = await test_research_plan()
+    logger.info(f"Miljøvariabler lastet: PINECONE_API_KEY {'funnet' if pinecone_api_key else 'MANGLER'}")
+    logger.info(f"Miljøvariabler lastet: OPENAI_API_KEY {'funnet' if openai_api_key else 'MANGLER'}")
+    logger.info(f"Bruker Pinecone indeks: {pinecone_index_name}")
     
-    # Test 3: Query-generering
-    queries = await test_query_generation()
+    if not pinecone_api_key or not openai_api_key:
+        logger.error("VIKTIG: En eller flere nødvendige miljøvariabler mangler!")
+        logger.error("Sørg for at .env-filen eksisterer og inneholder PINECONE_API_KEY og OPENAI_API_KEY")
+        return
     
-    # Test 4: Direkte retrieval
-    docs = await test_retrieval()
+    # Opprett embedding-modell
+    embedding_model = OpenAIEmbeddings(model="text-embedding-3-small")
     
-    # Test 5: Full forskningsprosess
-    research_result = await test_full_research()
+    # Test retrieval direkte fra Pinecone først for å isolere problemer
+    logger.info("=== TESTER DIREKTE PINECONE RETRIEVAL ===")
+    try:
+        # Koble til Pinecone
+        pc = pinecone.Pinecone(api_key=pinecone_api_key)
+        index = pc.Index(name=pinecone_index_name)
+        
+        # Opprett vektorlager
+        vstore = PineconeVectorStore.from_existing_index(
+            index_name=pinecone_index_name,
+            embedding=embedding_model,
+            text_key="text"  # Bruk text for nye dokumenter i den nye indeksen
+        )
+        
+        # Opprett retriever med content_key="text"
+        retriever = vstore.as_retriever(
+            search_kwargs={"k": 5},
+            content_key="text"  # Nøkkelen som inneholder dokumentteksten
+        )
+        
+        # Test søk
+        test_query = "Hva er reglene for habilitet?"
+        logger.info(f"Tester søk med spørring: '{test_query}'")
+        
+        # Embed spørringen
+        query_embedding = embedding_model.embed_query(test_query)
+        logger.info(f"Embedding-dimensjon: {len(query_embedding)}")
+        
+        # Utfør direkte søk
+        test_docs = await retriever.ainvoke(test_query)
+        logger.info(f"Retriever fant {len(test_docs)} dokumenter")
+        
+        # Skriv ut detaljer om dokumentene
+        if test_docs:
+            logger.info(f"Første dokument metadata: {test_docs[0].metadata}")
+            logger.info(f"Første dokument type: {type(test_docs[0])}")
+            logger.info(f"Første dokument innhold (utdrag): {test_docs[0].page_content[:100]}")
+        else:
+            logger.warning("Ingen dokumenter funnet ved direkte Pinecone-søk!")
+    except Exception as e:
+        logger.error(f"Feil ved testing av direkte Pinecone retrieval: {str(e)}")
+        logger.error(traceback.format_exc())
     
-    print("\nTESTING FULLFØRT")
+    # Test conduct_research
+    logger.info("=== TESTER CONDUCT_RESEARCH ===")
+    try:
+        # Spørsmål
+        query = "Hva er reglene for habilitet?"
+        
+        # Opprett LLM
+        llm = ChatOpenAI(model="gpt-4o", temperature=0)
+        
+        # Oppsett av konfigurasjon
+        config = RunnableConfig(
+            configurable={
+                "retriever_provider": "pinecone",
+                "embedding_model": "openai/text-embedding-3-small",
+                "query_model": "openai/gpt-4o",
+                "response_model": "openai/gpt-4o",
+                "search_kwargs": {"k": 10}
+            }
+        )
+        
+        # Opprett initial_state med tom docs-liste
+        initial_state = AgentState(
+            messages=[HumanMessage(content=query)],
+            router=Router(type="lovspørsmål", logic=""),
+            steps=["Undersøk lovregler om habilitet"],
+            documents=[]
+        )
+        
+        logger.info(f"Spørring: '{query}'")
+        
+        # Kall conduct_research og gi den state og config
+        result = await conduct_research(initial_state, config=config)
+        
+        # Sjekk resultatet - dokumentene vil være i result['documents']
+        if 'documents' in result and result['documents']:
+            documents = result['documents']
+            logger.info(f"Totalt antall dokumenter før reduksjon: {len(documents)}")
+            
+            # Test reduksjon av dokumenter
+            unique_docs = reduce_docs([], documents)
+            logger.info(f"Antall unike dokumenter etter reduksjon: {len(unique_docs)}")
+            
+            # Se på metadata
+            if unique_docs:
+                logger.info(f"Metadata nøkler fra første dokument: {list(unique_docs[0].metadata.keys())}")
+                logger.info(f"Dokumentinnhold (første 100 tegn): {unique_docs[0].page_content[:100]}")
+                logger.info(f"Unik ID: {unique_docs[0].metadata.get('uuid', 'ingen')}")
+            else:
+                logger.warning("Ingen dokumenter etter reduksjon!")
+        else:
+            logger.warning("Ingen dokumenter funnet i resultatet fra conduct_research!")
+        
+        # Print andre detaljer i resultatet
+        logger.info("\nAndre detaljer i resultatet:")
+        for key, value in result.items():
+            if key != 'documents':
+                logger.info(f"{key}: {str(value)[:200]}...")
+        
+    except Exception as e:
+        logger.error(f"Feil under testing av conduct_research: {str(e)}")
+        logger.error(traceback.format_exc())
+    
+    logger.info("=== SLUTT TEST_GRAPH_DEBUG ===")
 
 if __name__ == "__main__":
     asyncio.run(main()) 
