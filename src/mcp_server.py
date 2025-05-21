@@ -188,7 +188,14 @@ class LovdataMCPServer:
                             message_content = str(message)
                             mcp_logger.warning(f"Falt tilbake til str(message): {message_content[:50]}")
                         
-                        mcp_logger.info(f"Returnerer bearbeidet svar fra grafen: {message_content[:100]}...")
+                        # Sjekk om svaret inneholder strukturert JSON-data
+                        # Dersom det finnes, bør vi bevare denne formateringen
+                        if message_content and "```json" in message_content:
+                            mcp_logger.info("Svar inneholder JSON-strukturerte metadata")
+                            
+                        # Logg meldingsinnhold for debugging
+                        metadata_log = "INNEHOLDER JSON-METADATA" if "```json" in message_content else "MANGLER STRUKTURERTE METADATA"
+                        mcp_logger.info(f"Respons {metadata_log}: {message_content[:150]}...")
                         
                         # Returner svaret direkte som string
                         return message_content
@@ -218,6 +225,46 @@ class LovdataMCPServer:
                         if doc_summaries:
                             response = "Her er relevante dokumenter jeg fant:\n\n" + "\n\n".join(doc_summaries)
                             mcp_logger.info(f"Genererte svar fra {len(doc_summaries)} dokumenter")
+                            
+                            # Legg til strukturert JSON-metadata
+                            response += "\n\n```json\n"
+                            response += "{\n"
+                            response += '  "kilder": [\n'
+                            
+                            for i, doc in enumerate(docs):
+                                response += "    {\n"
+                                if hasattr(doc, 'metadata'):
+                                    # Ekstraherer metadata fra dokumentet
+                                    metadata = doc.metadata
+                                    response += f'      "lovId": "{metadata.get("lov_id", f"ukjent-{i+1}")}",\n'
+                                    response += f'      "lovNavn": "{metadata.get("lov_navn", "Ukjent lov")}",\n'
+                                    
+                                    # Legg til kapittel og paragraf hvis tilgjengelig
+                                    if metadata.get("kapittel_nr"):
+                                        response += f'      "kapittelNr": "{metadata.get("kapittel_nr")}",\n'
+                                    if metadata.get("kapittel_tittel"):
+                                        response += f'      "kapittelTittel": "{metadata.get("kapittel_tittel")}",\n'
+                                    if metadata.get("paragraf_nr"):
+                                        response += f'      "paragrafNr": "{metadata.get("paragraf_nr")}",\n'
+                                    if metadata.get("paragraf_tittel"):
+                                        response += f'      "paragrafTittel": "{metadata.get("paragraf_tittel")}",\n'
+                                    
+                                    response += f'      "tekst": "{truncate_text(doc.page_content, max_length=150)}"\n'
+                                else:
+                                    # Fallback for tilfeller uten metadata
+                                    response += f'      "lovId": "ukjent-{i+1}",\n'
+                                    response += f'      "tekst": "{truncate_text(str(doc), max_length=150)}"\n'
+                                
+                                response += "    }"
+                                if i < len(docs) - 1:
+                                    response += ","
+                                response += "\n"
+                                
+                            response += "  ],\n"
+                            response += '  "nøkkelbegreper": ["lovverk", "norsk lov"]\n'
+                            response += "}\n```"
+                            
+                            mcp_logger.info("Returnerer fallback-respons med JSON-metadata")
                             return response
                     
                     mcp_logger.warning("Kunne ikke finne dokumenter eller messages i resultatet")
@@ -246,7 +293,33 @@ class LovdataMCPServer:
             results = dummy_results[:min(antall_resultater, len(dummy_results))]
             
             mcp_logger.info(f"Søk fullført. Fant {len(results)} resultater.")
-            return results
+            
+            # Formatter dummy-resultatene som en AI-respons istedenfor å returnere rådataene
+            formatted_response = "Basert på ditt spørsmål har jeg funnet følgende relevante lover:\n\n"
+            
+            for i, result in enumerate(results):
+                formatted_response += f"**{result['id']}** - {result['excerpt']}\n\n"
+                
+            formatted_response += "\n\n```json\n"
+            formatted_response += "{\n"
+            formatted_response += '  "kilder": [\n'
+            
+            for i, result in enumerate(results):
+                formatted_response += "    {\n"
+                formatted_response += f'      "lovId": "{result["id"]}",\n'
+                formatted_response += f'      "lovNavn": "{result["excerpt"].split(". ")[0]}",\n'
+                formatted_response += f'      "tekst": "{result["excerpt"]}"\n'
+                formatted_response += "    }"
+                if i < len(results) - 1:
+                    formatted_response += ","
+                formatted_response += "\n"
+                
+            formatted_response += "  ],\n"
+            formatted_response += '  "nøkkelbegreper": ["lovverk", "norsk lov"]\n'
+            formatted_response += "}\n```"
+            
+            mcp_logger.info("Returnerer formatert dummy-respons med JSON-metadata")
+            return formatted_response
         
         @self.mcp.tool()
         async def hent_lovtekst(lov_id: str) -> str:
@@ -376,7 +449,15 @@ class LovdataMCPServer:
                             message_content = str(message)
                             mcp_logger.warning(f"Falt tilbake til str(message): {message_content[:50]}")
                             
-                        mcp_logger.info(f"Returnerer bearbeidet svar fra grafen: {message_content[:100]}...")
+                        # Sjekk om svaret inneholder strukturert JSON-data
+                        # Dersom det finnes, bør vi bevare denne formateringen
+                        if message_content and "```json" in message_content:
+                            mcp_logger.info("Svar inneholder JSON-strukturerte metadata")
+                            
+                        # Logg meldingsinnhold for debugging
+                        metadata_log = "INNEHOLDER JSON-METADATA" if "```json" in message_content else "MANGLER STRUKTURERTE METADATA"
+                        mcp_logger.info(f"Respons {metadata_log}: {message_content[:150]}...")
+                        
                         return message_content
                     
                     # Fallback: Forsøk å hente dokumenter direkte
@@ -408,12 +489,37 @@ class LovdataMCPServer:
                     # Fall tilbake til dummy-implementasjon ved feil
             
             # Dummy-implementasjon for testing eller fallback
+            dummy_text = ""
+            dummy_lov_navn = ""
             if lov_id == "lov-1814-05-17-1":
-                return "Kongeriket Norges Grunnlov, gitt i riksforsamlingen på Eidsvoll den 17. mai 1814, slik den lyder etter senere endringer. § 1. Kongeriket Norge er et fritt, selvstendig, udelelig og uavhendelig rike."
+                dummy_text = "Kongeriket Norges Grunnlov, gitt i riksforsamlingen på Eidsvoll den 17. mai 1814, slik den lyder etter senere endringer. § 1. Kongeriket Norge er et fritt, selvstendig, udelelig og uavhendelig rike."
+                dummy_lov_navn = "Grunnloven"
             elif lov_id == "lov-1992-07-17-100":
-                return "Lov om barneverntjenester (barnevernloven). Lovens formål er å sikre at barn og unge som lever under forhold som kan skade deres helse og utvikling, får nødvendig hjelp, omsorg og beskyttelse til rett tid."
+                dummy_text = "Lov om barneverntjenester (barnevernloven). Lovens formål er å sikre at barn og unge som lever under forhold som kan skade deres helse og utvikling, får nødvendig hjelp, omsorg og beskyttelse til rett tid."
+                dummy_lov_navn = "Barnevernloven"
             else:
-                return f"Lovtekst for {lov_id} er ikke tilgjengelig."
+                dummy_text = f"Lovtekst for {lov_id} er ikke tilgjengelig."
+                dummy_lov_navn = f"Ukjent lov ({lov_id})"
+                
+            # Formater responsen på samme måte som en AI-respons
+            formatted_response = f"Her er lovteksten for {dummy_lov_navn} ({lov_id}):\n\n"
+            formatted_response += dummy_text
+            
+            # Legg til strukturert JSON-metadata
+            formatted_response += "\n\n```json\n"
+            formatted_response += "{\n"
+            formatted_response += '  "kilder": [\n'
+            formatted_response += "    {\n"
+            formatted_response += f'      "lovId": "{lov_id}",\n'
+            formatted_response += f'      "lovNavn": "{dummy_lov_navn}",\n'
+            formatted_response += f'      "tekst": "{dummy_text}"\n'
+            formatted_response += "    }\n"
+            formatted_response += "  ],\n"
+            formatted_response += '  "nøkkelbegreper": ["lovverk", "norsk lov"]\n'
+            formatted_response += "}\n```"
+            
+            mcp_logger.info("Returnerer formatert dummy-lovtekst med JSON-metadata")
+            return formatted_response
     
     def run(self):
         """Start MCP-serveren med valgt transport."""

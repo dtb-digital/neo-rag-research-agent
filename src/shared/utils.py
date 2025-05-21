@@ -22,11 +22,34 @@ def _format_doc(doc: Document) -> str:
         str: The formatted document as an XML string.
     """
     metadata = doc.metadata or {}
-    meta = "".join(f" {k}={v!r}" for k, v in metadata.items())
-    if meta:
-        meta = f" {meta}"
-
-    return f"<document{meta}>\n{doc.page_content}\n</document>"
+    
+    # Strukturert formatering for lovdata-dokumenter med spesialbehandling av metadata
+    # Bruk strukturert XML for å gjøre det lettere for Claude å lese
+    struktur_elementer = ["lov_id", "lov_navn", "lov_tittel", "kapittel_nr", 
+                          "kapittel_tittel", "paragraf_nr", "paragraf_tittel"]
+    
+    # Samle strukturerte metadata-elementer
+    struktur_metadata = ""
+    for key in struktur_elementer:
+        if key in metadata and metadata[key]:
+            struktur_metadata += f'<{key}>{metadata[key]}</{key}>\n'
+    
+    # Samle resterende metadata i generisk format
+    andre_metadata = ""
+    for k, v in metadata.items():
+        if k not in struktur_elementer and v is not None:
+            andre_metadata += f'<meta key="{k}">{v}</meta>\n'
+    
+    # Kombinert XML-output
+    return f"""<document>
+<content>
+{doc.page_content}
+</content>
+<metadata>
+{struktur_metadata}
+{andre_metadata}
+</metadata>
+</document>"""
 
 
 def format_docs(docs: Optional[list[Document]]) -> str:
