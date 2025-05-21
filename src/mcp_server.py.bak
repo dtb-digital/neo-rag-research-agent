@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 os.environ["LOG_LEVEL"] = "INFO"
 
 from fastmcp import FastMCP
-from src.logger import logger, setup_logger
+from shared.logging_config import logger, setup_logger
 from src.utils import truncate_text
 
 # Opprett en spesifikk logger for MCP-serveren

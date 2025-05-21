@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from src.logger import logger
+from shared.logging_config import logger
 
 
 def ensure_directory(directory: Union[str, Path]) -> Path:

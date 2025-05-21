@@ -32,11 +32,10 @@ sys.path.insert(0, project_root)
 sys.path.append(os.path.join(project_root, "src"))
 
 # Importer logger.py først for å sette opp grunnleggende logging
-from src.logger import logger, setup_logger
+from shared.logging_config import logger, setup_logger, configure_logging
 
-# Deretter importer logging_config, men ikke konfigurer på nytt hvis handlere finnes
-from shared.logging_config import configure_logging
-configure_logging()  # Dette vil bare konfigurere hvis det ikke allerede er gjort
+# Konfigurer logging eksplisitt for å sikre at alt er satt opp korrekt
+configure_logging()
 
 # Nå er logging konfigurert, så vi kan fortsette med resten av importen
 init_logger.info("Logging konfigurasjon initialisert")
