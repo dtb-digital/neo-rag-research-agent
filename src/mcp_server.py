@@ -84,7 +84,6 @@ class LovdataMCPServer:
             
             if USING_RETRIEVAL_GRAPH:
                 try:
-                    # Bruk hovedgrafen for søk i stedet for direkte søk
                     # Konfigurer søk med Pinecone
                     config = RunnableConfig(
                         configurable={
@@ -110,101 +109,28 @@ class LovdataMCPServer:
                     if isinstance(result, dict) and 'messages' in result and result['messages']:
                         # Finn siste AI-melding i messages-listen
                         messages = result['messages']
+                        mcp_logger.info(f"Mottok {len(messages)} meldinger fra grafen")
                         
                         # Gå gjennom meldingene bakfra for å finne siste AI-melding
+                        ai_message = None
                         for msg in reversed(messages):
                             # Sjekk om dette er en AI-melding
-                            if (isinstance(msg, dict) and msg.get('type') == 'ai') or hasattr(msg, 'type') and msg.type == 'ai':
-                                # Hvis vi fant en AI-melding, returner dens content direkte
-                                if hasattr(msg, 'content'):
-                                    mcp_logger.info("Fant og returnerer content fra AI-melding (attributt)")
-                                    return msg.content
-                                elif isinstance(msg, dict) and 'content' in msg:
-                                    mcp_logger.info("Fant og returnerer content fra AI-melding (dict)")
-                                    return msg['content']
+                            if (isinstance(msg, dict) and msg.get('type') == 'ai') or (hasattr(msg, 'type') and msg.type == 'ai'):
+                                ai_message = msg
+                                break
                         
-                        # Hvis vi ikke fant en spesifikk AI-melding, prøv den siste meldingen
-                        last_msg = messages[-1]
-                        if hasattr(last_msg, 'content'):
-                            mcp_logger.info("Returnerer content fra siste melding (attributt)")
-                            return last_msg.content
-                        elif isinstance(last_msg, dict) and 'content' in last_msg:
-                            mcp_logger.info("Returnerer content fra siste melding (dict)")
-                            return last_msg['content']
-                        
-                        # Siste utvei: Konverter til streng
-                        mcp_logger.warning("Ingen AI-melding med content funnet, returnerer streng")
-                        return str(result)
+                        if ai_message:
+                            # Hent content fra AI-meldingen og returner direkte
+                            if hasattr(ai_message, 'content'):
+                                mcp_logger.info("Returnerer content fra AI-melding")
+                                return ai_message.content
+                            elif isinstance(ai_message, dict) and 'content' in ai_message:
+                                mcp_logger.info("Returnerer content fra AI-melding")
+                                return ai_message['content']
                     
-                    # Fallback: Vi har ikke et ferdig bearbeidet svar, så vi må lage et basert på dokumentene
-                    mcp_logger.warning("Ingen messages funnet i resultat, prøver å bruke dokumenter...")
-                    
-                    # Forsøk å hente dokumenter fra ulike mulige plasseringer i resultatet
-                    docs = []
-                    if isinstance(result, dict) and 'documents' in result:
-                        docs = result['documents']
-                    elif hasattr(result, 'documents') and result.documents:
-                        docs = result.documents
-                    elif hasattr(result, 'get') and result.get('documents'):
-                        docs = result.get('documents', [])
-                    
-                    if docs:
-                        mcp_logger.info(f"Fant {len(docs)} dokumenter som fallback")
-                        # Konverter dokumentene til en tekstlig oppsummering
-                        doc_summaries = []
-                        for i, doc in enumerate(docs):
-                            if hasattr(doc, 'page_content'):
-                                doc_id = doc.metadata.get("id", f"Dokument {i+1}") if hasattr(doc, 'metadata') else f"Dokument {i+1}"
-                                doc_summaries.append(f"{doc_id}: {truncate_text(doc.page_content, max_length=200)}")
-                        
-                        # Kombiner dokumentene til et enkelt svar
-                        if doc_summaries:
-                            response = "Her er relevante dokumenter jeg fant:\n\n" + "\n\n".join(doc_summaries)
-                            mcp_logger.info(f"Genererte svar fra {len(doc_summaries)} dokumenter")
-                            
-                            # Legg til strukturert JSON-metadata
-                            response += "\n\n```json\n"
-                            response += "{\n"
-                            response += '  "kilder": [\n'
-                            
-                            for i, doc in enumerate(docs):
-                                response += "    {\n"
-                                if hasattr(doc, 'metadata'):
-                                    # Ekstraherer metadata fra dokumentet
-                                    metadata = doc.metadata
-                                    response += f'      "lovId": "{metadata.get("lov_id", f"ukjent-{i+1}")}",\n'
-                                    response += f'      "lovNavn": "{metadata.get("lov_navn", "Ukjent lov")}",\n'
-                                    
-                                    # Legg til kapittel og paragraf hvis tilgjengelig
-                                    if metadata.get("kapittel_nr"):
-                                        response += f'      "kapittelNr": "{metadata.get("kapittel_nr")}",\n'
-                                    if metadata.get("kapittel_tittel"):
-                                        response += f'      "kapittelTittel": "{metadata.get("kapittel_tittel")}",\n'
-                                    if metadata.get("paragraf_nr"):
-                                        response += f'      "paragrafNr": "{metadata.get("paragraf_nr")}",\n'
-                                    if metadata.get("paragraf_tittel"):
-                                        response += f'      "paragrafTittel": "{metadata.get("paragraf_tittel")}",\n'
-                                    
-                                    response += f'      "tekst": "{truncate_text(doc.page_content, max_length=150)}"\n'
-                                else:
-                                    # Fallback for tilfeller uten metadata
-                                    response += f'      "lovId": "ukjent-{i+1}",\n'
-                                    response += f'      "tekst": "{truncate_text(str(doc), max_length=150)}"\n'
-                                
-                                response += "    }"
-                                if i < len(docs) - 1:
-                                    response += ","
-                                response += "\n"
-                                
-                            response += "  ],\n"
-                            response += '  "nøkkelbegreper": ["lovverk", "norsk lov"]\n'
-                            response += "}\n```"
-                            
-                            mcp_logger.info("Returnerer fallback-respons med JSON-metadata")
-                            return response
-                    
-                    mcp_logger.warning("Kunne ikke finne dokumenter eller messages i resultatet")
-                    return "Beklager, jeg kunne ikke finne relevant informasjon om dette spørsmålet."
+                    # Hvis ingen AI-melding ble funnet, returner et enkelt svar
+                    mcp_logger.warning("Ingen AI-melding funnet i resultatet")
+                    return "Beklager, jeg kunne ikke generere et svar basert på søkeresultatene."
                 
                 except Exception as e:
                     mcp_logger.error(f"Feil ved søk: {str(e)}")
@@ -212,43 +138,40 @@ class LovdataMCPServer:
                     # Fall tilbake til dummy-implementasjon ved feil
             
             # Dummy-implementasjon for testing eller fallback
-            dummy_results = [
-                {
-                    "id": "lov-1814-05-17-1",
-                    "score": 0.95,
-                    "excerpt": "Kongeriket Norges Grunnlov, gitt i riksforsamlingen på Eidsvoll den 17. mai 1814, slik den lyder etter senere endringer."
-                },
-                {
-                    "id": "lov-1992-07-17-100",
-                    "score": 0.85,
-                    "excerpt": "Lov om barneverntjenester (barnevernloven). Lovens formål er å sikre at barn og unge som lever under forhold som kan skade deres helse og utvikling, får nødvendig hjelp, omsorg og beskyttelse til rett tid."
-                }
-            ]
-            
-            # Begrens antall resultater til antall_resultater
-            results = dummy_results[:min(antall_resultater, len(dummy_results))]
-            
-            mcp_logger.info(f"Søk fullført. Fant {len(results)} resultater.")
-            
-            # Formatter dummy-resultatene som en AI-respons istedenfor å returnere rådataene
-            formatted_response = "Basert på ditt spørsmål har jeg funnet følgende relevante lover:\n\n"
-            
-            for i, result in enumerate(results):
-                formatted_response += f"**{result['id']}** - {result['excerpt']}\n\n"
-                
-            formatted_response += "\nStrukturert data nedenfor kan brukes med verktøyet `hent_lovtekst` for å hente spesifikke lovtekster:\n\n"
-            formatted_response += "## Kilder:\n"
-            formatted_response += "- **[{}]** {}: {}\n".format(results[0]['id'], results[0]['excerpt'].split('. ')[0], results[0]['excerpt'])
-            if len(results) > 1:
-                for i, result in enumerate(results[1:], 1):
-                    formatted_response += "- **[{}]** {}: {}\n".format(result['id'], result['excerpt'].split('. ')[0], result['excerpt'])
-                
-            formatted_response += "\n## Nøkkelbegreper:\n"
-            formatted_response += "- lovverk\n"
-            formatted_response += "- norsk lov"
-            
-            mcp_logger.info("Returnerer formatert dummy-respons med listeformat-metadata")
-            return formatted_response
+            dummy_response = """
+Basert på ditt spørsmål har jeg funnet følgende relevante lover:
+
+**lov-1814-05-17-1** - Kongeriket Norges Grunnlov, gitt i riksforsamlingen på Eidsvoll den 17. mai 1814, slik den lyder etter senere endringer.
+
+**lov-1992-07-17-100** - Lov om barneverntjenester (barnevernloven). Lovens formål er å sikre at barn og unge som lever under forhold som kan skade deres helse og utvikling, får nødvendig hjelp, omsorg og beskyttelse til rett tid.
+
+## Kilder:
+- **Kilde 1:**
+  - lov_navn: Grunnloven
+  - lov_id: lov-1814-05-17-1
+  - kapittel_nr: A
+  - kapittel_tittel: Statsformen og religionen
+  - paragraf_nr: 1
+  - paragraf_tittel: Statsform
+  - sist_oppdatert: 2020-05-14
+  - ikrafttredelse: 1814-05-17
+
+- **Kilde 2:**
+  - lov_navn: Barnevernloven
+  - lov_id: lov-1992-07-17-100
+  - kapittel_nr: 1
+  - kapittel_tittel: Formål og virkeområde
+  - paragraf_nr: 1
+  - paragraf_tittel: Lovens formål
+  - sist_oppdatert: 2021-06-18
+  - ikrafttredelse: 1993-01-01
+
+## Nøkkelbegreper:
+- lovverk
+- norsk lov
+"""
+            mcp_logger.info("Returnerer dummy-respons")
+            return dummy_response
         
         @self.mcp.tool()
         async def hent_lovtekst(lov_id: str) -> str:
@@ -300,88 +223,86 @@ class LovdataMCPServer:
                     if isinstance(result, dict) and 'messages' in result and result['messages']:
                         # Finn siste AI-melding i messages-listen
                         messages = result['messages']
+                        mcp_logger.info(f"Mottok {len(messages)} meldinger fra grafen")
                         
                         # Gå gjennom meldingene bakfra for å finne siste AI-melding
+                        ai_message = None
                         for msg in reversed(messages):
                             # Sjekk om dette er en AI-melding
-                            if (isinstance(msg, dict) and msg.get('type') == 'ai') or hasattr(msg, 'type') and msg.type == 'ai':
-                                # Hvis vi fant en AI-melding, returner dens content direkte
-                                if hasattr(msg, 'content'):
-                                    mcp_logger.info("Fant og returnerer content fra AI-melding (attributt)")
-                                    return msg.content
-                                elif isinstance(msg, dict) and 'content' in msg:
-                                    mcp_logger.info("Fant og returnerer content fra AI-melding (dict)")
-                                    return msg['content']
+                            if (isinstance(msg, dict) and msg.get('type') == 'ai') or (hasattr(msg, 'type') and msg.type == 'ai'):
+                                ai_message = msg
+                                break
                         
-                        # Hvis vi ikke fant en spesifikk AI-melding, prøv den siste meldingen
-                        last_msg = messages[-1]
-                        if hasattr(last_msg, 'content'):
-                            mcp_logger.info("Returnerer content fra siste melding (attributt)")
-                            return last_msg.content
-                        elif isinstance(last_msg, dict) and 'content' in last_msg:
-                            mcp_logger.info("Returnerer content fra siste melding (dict)")
-                            return last_msg['content']
-                        
-                        # Siste utvei: Konverter til streng
-                        mcp_logger.warning("Ingen AI-melding med content funnet, returnerer streng")
-                        return str(result)
+                        if ai_message:
+                            # Hent content fra AI-meldingen og returner direkte
+                            if hasattr(ai_message, 'content'):
+                                mcp_logger.info("Returnerer content fra AI-melding")
+                                return ai_message.content
+                            elif isinstance(ai_message, dict) and 'content' in ai_message:
+                                mcp_logger.info("Returnerer content fra AI-melding")
+                                return ai_message['content']
                     
-                    # Fallback: Forsøk å hente dokumenter direkte
-                    docs = []
-                    if isinstance(result, dict) and 'documents' in result:
-                        docs = result['documents']
-                    elif hasattr(result, 'documents') and result.documents:
-                        docs = result.documents
-                    elif hasattr(result, 'get') and result.get('documents'):
-                        docs = result.get('documents', [])
-                    
-                    if docs:
-                        # Finn det første dokumentet som har riktig ID
-                        for doc in docs:
-                            if hasattr(doc, 'metadata') and doc.metadata.get("id") == lov_id:
-                                mcp_logger.info(f"Dokument funnet: {lov_id}")
-                                return doc.page_content
-                        
-                        # Hvis vi ikke fant et dokument med riktig ID, returner innholdet av første dokument
-                        if docs:
-                            mcp_logger.warning(f"Dokument med ID {lov_id} ikke funnet, bruker første resultat")
-                            return docs[0].page_content if hasattr(docs[0], 'page_content') else str(docs[0])
-                    
-                    mcp_logger.warning(f"Dokument ikke funnet: {lov_id}")
+                    # Hvis ingen AI-melding ble funnet, returner en feilmelding
+                    mcp_logger.warning("Ingen AI-melding funnet i resultatet")
                     return f"Beklager, jeg kunne ikke finne lovtekst med ID {lov_id}."
+                    
                 except Exception as e:
                     mcp_logger.error(f"Feil ved henting av dokument: {str(e)}")
                     mcp_logger.warning("Faller tilbake til dummy-implementasjon for dokumenthenting")
                     # Fall tilbake til dummy-implementasjon ved feil
             
             # Dummy-implementasjon for testing eller fallback
-            dummy_text = ""
             dummy_lov_navn = ""
+            dummy_text = ""
+            
             if lov_id == "lov-1814-05-17-1":
-                dummy_text = "Kongeriket Norges Grunnlov, gitt i riksforsamlingen på Eidsvoll den 17. mai 1814, slik den lyder etter senere endringer. § 1. Kongeriket Norge er et fritt, selvstendig, udelelig og uavhendelig rike."
                 dummy_lov_navn = "Grunnloven"
+                dummy_text = "Kongeriket Norges Grunnlov, gitt i riksforsamlingen på Eidsvoll den 17. mai 1814, slik den lyder etter senere endringer. § 1. Kongeriket Norge er et fritt, selvstendig, udelelig og uavhendelig rike."
             elif lov_id == "lov-1992-07-17-100":
-                dummy_text = "Lov om barneverntjenester (barnevernloven). Lovens formål er å sikre at barn og unge som lever under forhold som kan skade deres helse og utvikling, får nødvendig hjelp, omsorg og beskyttelse til rett tid."
                 dummy_lov_navn = "Barnevernloven"
+                dummy_text = "Lov om barneverntjenester (barnevernloven). Lovens formål er å sikre at barn og unge som lever under forhold som kan skade deres helse og utvikling, får nødvendig hjelp, omsorg og beskyttelse til rett tid."
             else:
                 dummy_text = f"Lovtekst for {lov_id} er ikke tilgjengelig."
                 dummy_lov_navn = f"Ukjent lov ({lov_id})"
                 
-            # Formater responsen på samme måte som en AI-respons
-            formatted_response = f"Her er lovteksten for {dummy_lov_navn} ({lov_id}):\n\n"
-            formatted_response += dummy_text
+            dummy_response = f"""
+Her er lovteksten for {dummy_lov_navn} ({lov_id}):
+
+{dummy_text}
+
+## Kilder:
+- **Kilde 1:**
+  - lov_navn: {dummy_lov_navn}
+  - lov_id: {lov_id}
+  - dokumenttype: lovtekst
+  - status: gjeldende
+"""
+            if lov_id == "lov-1814-05-17-1":
+                dummy_response += """  - kapittel_nr: A
+  - kapittel_tittel: Statsformen og religionen
+  - paragraf_nr: 1
+  - paragraf_tittel: Statsform
+  - sist_oppdatert: 2020-05-14
+  - ikrafttredelse: 1814-05-17
+"""
+            elif lov_id == "lov-1992-07-17-100":
+                dummy_response += """  - kapittel_nr: 1
+  - kapittel_tittel: Formål og virkeområde
+  - paragraf_nr: 1
+  - paragraf_tittel: Lovens formål
+  - sist_oppdatert: 2021-06-18
+  - ikrafttredelse: 1993-01-01
+  - departement: Barne- og familiedepartementet
+"""
             
-            # Legg til strukturert metadata i listeformat
-            formatted_response += "\n\nStrukturert data nedenfor kan brukes for videre referanse:\n\n"
-            formatted_response += "## Kilder:\n"
-            formatted_response += f"- **[{lov_id}]** {dummy_lov_navn}: {dummy_text}\n"
+            dummy_response += """
+## Nøkkelbegreper:
+- lovverk
+- norsk lov
+"""
             
-            formatted_response += "\n## Nøkkelbegreper:\n"
-            formatted_response += "- lovverk\n"
-            formatted_response += "- norsk lov"
-            
-            mcp_logger.info("Returnerer formatert dummy-lovtekst med listeformat-metadata")
-            return formatted_response
+            mcp_logger.info("Returnerer dummy-lovtekst")
+            return dummy_response
     
     def run(self):
         """Start MCP-serveren med valgt transport."""

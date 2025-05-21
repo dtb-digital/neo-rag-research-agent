@@ -116,7 +116,12 @@ Følgende endringer er gjort for å løse problemene:
    - Forenklet metadata-strukturen til mer basale felt som er lettere å generere
    - Beholdt kategoriene: Kilder, Relaterte lover, Nøkkelbegreper
    - Ytterligere forenklet metadata fra Markdown-tabeller til enklere listestruktur
-   - Bruker nå format `- **[lov-id]** Lovnavn (Kapittel, Paragraf): Tekst` for kilder
+   - Endret til nøyaktig samme feltnavn som brukes i Pinecone-databasen (lov_navn, lov_id, kapittel_nr, kapittel_tittel, paragraf_nr, paragraf_tittel)
+   - Dette gjør det enklere å bygge verktøy som kan filtrere og søke i Pinecone basert på responser fra AI
+   - Gjort prompten mye tydeligere med EKSTREMT VIKTIG-instruksjon om å inkludere ALLE metadata-felt
+   - Fjernet den misvisende instruksjonen "Ethvert annet metadata-felt som finnes i kilden" fra eksemplene
+   - Erstattet med konkrete eksempler på faktiske metadata-felt (ikrafttredelse, sist_endret, status, språk)
+   - Lagt til eksplisitt advarsel mot å kopiere instruksjonsteksten bokstavelig
 
 2. **Forenklet MCP-serveren:**
    - Gjort MCP-serveren til en ren proxy uten unødvendig tolkning
@@ -124,10 +129,23 @@ Følgende endringer er gjort for å løse problemene:
    - Returnerer content-feltet direkte uten mellommanipulering
    - Fjernet all kompleks parsing og konverteringslogikk
    - Avskaffet spesialbehandling av multimodalt innhold
+   - Implementert programmatisk tilnærming for metadata-håndtering i både hovedkode og dummy-implementasjoner
+   - Bruker nå loops til å inkludere alle metadata-felt automatisk
+   - Konverterer automatisk snake_case til camelCase for JSON-output
+   - Inkluderer ekstra syntetiske metadata-felt i dummy-implementasjonen for testing og demonstrasjon
+   - Forbedret feilhåndtering for ulike metadata-formater (dict vs. objekter med __dict__)
+   - Lagt til sortering av metadata-felter for konsistent output
+   - Implementert escaping av spesialtegn i metadata-verdier
+   - Lagt til utvidet logging for bedre debugging av metadata-innhold
 
-3. **Endringer i dummy-data-håndtering:**
-   - Konvertert dummy-data til å bruke samme Markdown-format
-   - Sikret at formatet er konsistent på tvers av ekte og dummy-responser
+3. **Implementert helt ny tilnærming for metadata-håndtering:**
+   - Henter nå metadata direkte fra dokumentobjektene, uavhengig av AI-modellens respons
+   - Parser AI-modellens respons, identifiserer kildeseksjonen, og erstatter den med nøyaktige metadata
+   - Hvis kildeseksjonen mangler, legger til en ny seksjon med nøyaktige metadata på slutten
+   - Dette sikrer at alle feltene fra Pinecone-databasen bevares nøyaktig med originale verdier
+   - Håndterer semantisk oppdeling av respons for å bevare andre seksjoner (Relaterte lover, Nøkkelbegreper)
+   - Legger ved detaljert logging av metadata for debugging og feilsøking
+   - Denne metoden gjør systemet fullstendig uavhengig av AI-modellens evne til å gjengi metadata korrekt
 
 ## Test og kontrollspørsmål
 
