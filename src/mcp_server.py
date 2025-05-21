@@ -165,7 +165,12 @@ class LovdataMCPServer:
             """
             Søk etter relevante lovtekster, forskrifter og juridiske dokumenter basert på ditt spørsmål.
             
-            BRUK DETTE VERKTØYET når du ønsker oppdatert informasjon om lovverk og forskrifter, hentet direkte fra lovdata.no.
+            BRUK DETTE VERKTØYET når du ønsker informasjon om juridiske temaer men IKKE kjenner til en spesifikk lov eller paragraf. 
+            Dette verktøyet passer best for:
+            - Generelle juridiske spørsmål uten referanse til spesifikke lover
+            - Når du vil ha en oppsummering eller forklaring av juridiske konsepter
+            - Når du ikke vet hvilken lov som regulerer et bestemt tema
+            - Når du vil finne relevante lovtekster basert på et tema eller situasjon
             
             Dette verktøyet bruker en avansert juridisk modell til å forstå ditt spørsmål og returnerer 
             de mest relevante delene av norsk lovverk fra Lovdata. Verktøyet analyserer spørsmålet ditt,
@@ -242,39 +247,52 @@ class LovdataMCPServer:
                 raise e
         
         @self.mcp.tool()
-        async def hent_lovtekst(lov_id: str = "", kapittel_nr: str = "", paragraf_nr: str = "") -> str:
+        async def hent_lovtekst(lov_navn: str = "", lov_id: str = "", kapittel_nr: str = "", paragraf_nr: str = "") -> str:
             """
-            Hent komplett lovtekst eller forskrift basert på ID, kapittel eller paragraf.
+            Hent komplett lovtekst eller forskrift basert på navn, ID, kapittel eller paragraf.
             
-            BRUK DETTE VERKTØYET når du ønsker oppdatert informasjon om lovverk og forskrifter, hentet direkte fra lovdata.no.
+            BRUK DETTE VERKTØYET når du vil hente EKSAKT lovtekst og kjenner til en spesifikk lov eller paragraf. 
+            Dette verktøyet passer best for:
+            - Når du vil sitere eller vise selve lovteksten direkte
+            - Når du kjenner navnet på loven (som "Forvaltningsloven" eller "Naturmangfoldloven")
+            - Når du vil se en hel lov, et spesifikt kapittel, eller en spesifikk paragraf
+            - Når brukeren eksplisitt ber om lovteksten eller paragrafen, ikke bare en forklaring
             
             Dette verktøyet henter en lov, et kapittel eller en paragraf fra lovdata basert på metadata.
             Du kan angi en eller flere parametere for å spesifisere hva du ønsker å hente.
             
             Args:
+                lov_navn: Lovens navn (f.eks. "Grunnloven", "Forvaltningsloven", "Offentlighetsloven")
                 lov_id: Lovens unike identifikator (f.eks. "lov-1814-05-17-1" for Grunnloven)
-                kapittel_nr: Kapittelnummer innen en lov (må brukes sammen med lov_id)
-                paragraf_nr: Paragrafnummer innen en lov (må brukes sammen med lov_id)
+                kapittel_nr: Kapittelnummer innen en lov
+                paragraf_nr: Paragrafnummer innen en lov
                 
             Returns:
                 Lovtekst som matcher søkekriteriene
                 
             Eksempel på bruk:
-                Hent hele Grunnloven: lov_id="lov-1814-05-17-1"
-                Hent kapittel 3 i Grunnloven: lov_id="lov-1814-05-17-1", kapittel_nr="3"
-                Hent paragraf 100 i Grunnloven: lov_id="lov-1814-05-17-1", paragraf_nr="100"
+                Hent hele Grunnloven: lov_navn="Grunnloven"
+                Hent hele Forvaltningsloven: lov_navn="Forvaltningsloven"
+                Hent kapittel 3 i Offentlighetsloven: lov_navn="Offentlighetsloven", kapittel_nr="3"
+                Hent paragraf 5 i Naturmangfoldloven: lov_navn="Naturmangfoldloven", paragraf_nr="5"
             """
-            mcp_logger.info(f"Henter lovtekst med: lov_id={lov_id}, kapittel_nr={kapittel_nr}, paragraf_nr={paragraf_nr}")
+            mcp_logger.info(f"Henter lovtekst med: lov_navn={lov_navn}, lov_id={lov_id}, kapittel_nr={kapittel_nr}, paragraf_nr={paragraf_nr}")
             
             # Valider input
-            if not lov_id and not kapittel_nr and not paragraf_nr:
-                return "Du må spesifisere minst én parameter (lov_id, kapittel_nr eller paragraf_nr)."
+            if not lov_navn and not lov_id and not kapittel_nr and not paragraf_nr:
+                return "Du må spesifisere minst én parameter (lov_navn, lov_id, kapittel_nr eller paragraf_nr)."
             
             try:
                 # Bygg opp filter basert på parametere
                 filter_dict = {}
                 
-                if lov_id:
+                # Prioriter lov_navn fremfor lov_id
+                if lov_navn:
+                    # Bruk 'like' operator for å gjøre det mer fleksibelt
+                    filter_dict["lov_tittel"] = {"$eq": lov_navn}
+                    # Alternativt kan vi bruke pattern matching for mer fleksibilitet
+                    # filter_dict["lov_tittel"] = {"$text": {"$search": lov_navn}}
+                elif lov_id:
                     filter_dict["lov_id"] = {"$eq": lov_id}
                 
                 if kapittel_nr:
@@ -347,7 +365,7 @@ class LovdataMCPServer:
                 
                 # Hvis ingen AI-melding ble funnet, returner en feilmelding
                 mcp_logger.warning("Kunne ikke finne lovtekst via LangGraph-agent")
-                return f"Beklager, jeg kunne ikke finne lovtekst med de angitte kriteriene. Sjekk at lov_id, kapittel_nr og paragraf_nr er korrekte."
+                return f"Beklager, jeg kunne ikke finne lovtekst med de angitte kriteriene. Sjekk at lov_navn, lov_id, kapittel_nr og paragraf_nr er korrekte."
             
             except Exception as e:
                 mcp_logger.error(f"Feil ved henting av lovtekst: {str(e)}")
