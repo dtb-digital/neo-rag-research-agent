@@ -113,12 +113,11 @@ try:
     from retrieval_graph import graph as retrieval_graph
     from langchain_core.runnables import RunnableConfig
     from langchain_core.messages import HumanMessage
-    USING_RETRIEVAL_GRAPH = True
 except ImportError as e:
-    # Logg feil og bruk dummy-implementasjon hvis import feiler
-    USING_RETRIEVAL_GRAPH = False
+    # Stopp programmet hvis retrieval_graph ikke er tilgjengelig
     logger.error(f"Kunne ikke importere retrieval_graph: {str(e)}")
-    logger.warning("Bruker dummy-implementasjon for søk og dokumenthenting")
+    logger.error("Kan ikke starte MCP-serveren uten retrieval_graph. Avslutter.")
+    sys.exit(1)
 
 # Opprett en spesifikk logger for MCP-serveren
 mcp_logger = setup_logger("mcp-server")
@@ -156,7 +155,7 @@ class LovdataMCPServer:
         # Registrer verktøy
         self._register_tools()
         
-        mcp_logger.info(f"MCP-server initialisert (Using retrieval_graph: {USING_RETRIEVAL_GRAPH})")
+        mcp_logger.info("MCP-server initialisert")
     
     def _register_tools(self):
         """Registrer verktøy for MCP-serveren."""
@@ -188,96 +187,59 @@ class LovdataMCPServer:
             """
             mcp_logger.info(f"Utfører søk i lovdata: {sporsmal}, antall_resultater: {antall_resultater}")
             
-            if USING_RETRIEVAL_GRAPH:
-                try:
-                    # Konfigurer søk med Pinecone
-                    config = RunnableConfig(
-                        configurable={
-                            "retriever_provider": "pinecone",
-                            "embedding_model": "openai/text-embedding-3-small",
-                            "query_model": "openai/gpt-4o-mini",
-                            "response_model": "openai/gpt-4o-mini",
-                            "search_kwargs": {"k": antall_resultater}
-                        }
-                    )
-                    
-                    # Kjør grafen med spørringen
-                    mcp_logger.info(f"Invoker retrieval_graph med spørring: {sporsmal}")
-                    result = await retrieval_graph.ainvoke(
-                        {"messages": [HumanMessage(content=sporsmal)]},
-                        config,
-                    )
-                    
-                    # Logg resultatet for debugging
-                    mcp_logger.info(f"Graf-resultat mottatt: {type(result)}")
-                    
-                    # Hvis grafen har generert et komplett svar via messages, bruk dette
-                    if isinstance(result, dict) and 'messages' in result and result['messages']:
-                        # Finn siste AI-melding i messages-listen
-                        messages = result['messages']
-                        mcp_logger.info(f"Mottok {len(messages)} meldinger fra grafen")
-                        
-                        # Gå gjennom meldingene bakfra for å finne siste AI-melding
-                        ai_message = None
-                        for msg in reversed(messages):
-                            # Sjekk om dette er en AI-melding
-                            if (isinstance(msg, dict) and msg.get('type') == 'ai') or (hasattr(msg, 'type') and msg.type == 'ai'):
-                                ai_message = msg
-                                break
-                        
-                        if ai_message:
-                            # Hent content fra AI-meldingen og returner direkte
-                            if hasattr(ai_message, 'content'):
-                                mcp_logger.info("Returnerer content fra AI-melding")
-                                return ai_message.content
-                            elif isinstance(ai_message, dict) and 'content' in ai_message:
-                                mcp_logger.info("Returnerer content fra AI-melding")
-                                return ai_message['content']
-                    
-                    # Hvis ingen AI-melding ble funnet, returner et enkelt svar
-                    mcp_logger.warning("Ingen AI-melding funnet i resultatet")
-                    return "Beklager, jeg kunne ikke generere et svar basert på søkeresultatene."
+            try:
+                # Konfigurer søk med Pinecone
+                config = RunnableConfig(
+                    configurable={
+                        "retriever_provider": "pinecone",
+                        "embedding_model": "openai/text-embedding-3-small",
+                        "query_model": "openai/gpt-4o-mini",
+                        "response_model": "openai/gpt-4o-mini",
+                        "search_kwargs": {"k": antall_resultater}
+                    }
+                )
                 
-                except Exception as e:
-                    mcp_logger.error(f"Feil ved søk: {str(e)}")
-                    mcp_logger.warning("Faller tilbake til dummy-implementasjon for søk")
-                    # Fall tilbake til dummy-implementasjon ved feil
+                # Kjør grafen med spørringen
+                mcp_logger.info(f"Invoker retrieval_graph med spørring: {sporsmal}")
+                result = await retrieval_graph.ainvoke(
+                    {"messages": [HumanMessage(content=sporsmal)]},
+                    config,
+                )
+                
+                # Logg resultatet for debugging
+                mcp_logger.info(f"Graf-resultat mottatt: {type(result)}")
+                
+                # Hvis grafen har generert et komplett svar via messages, bruk dette
+                if isinstance(result, dict) and 'messages' in result and result['messages']:
+                    # Finn siste AI-melding i messages-listen
+                    messages = result['messages']
+                    mcp_logger.info(f"Mottok {len(messages)} meldinger fra grafen")
+                    
+                    # Gå gjennom meldingene bakfra for å finne siste AI-melding
+                    ai_message = None
+                    for msg in reversed(messages):
+                        # Sjekk om dette er en AI-melding
+                        if (isinstance(msg, dict) and msg.get('type') == 'ai') or (hasattr(msg, 'type') and msg.type == 'ai'):
+                            ai_message = msg
+                            break
+                    
+                    if ai_message:
+                        # Hent content fra AI-meldingen og returner direkte
+                        if hasattr(ai_message, 'content'):
+                            mcp_logger.info("Returnerer content fra AI-melding")
+                            return ai_message.content
+                        elif isinstance(ai_message, dict) and 'content' in ai_message:
+                            mcp_logger.info("Returnerer content fra AI-melding")
+                            return ai_message['content']
+                
+                # Hvis ingen AI-melding ble funnet, returner en feilmelding
+                mcp_logger.warning("Ingen AI-melding funnet i resultatet")
+                return "Beklager, jeg kunne ikke generere et svar basert på søkeresultatene."
             
-            # Dummy-implementasjon for testing eller fallback
-            dummy_response = """
-Basert på ditt spørsmål har jeg funnet følgende relevante lover:
-
-**lov-1814-05-17-1** - Kongeriket Norges Grunnlov, gitt i riksforsamlingen på Eidsvoll den 17. mai 1814, slik den lyder etter senere endringer.
-
-**lov-1992-07-17-100** - Lov om barneverntjenester (barnevernloven). Lovens formål er å sikre at barn og unge som lever under forhold som kan skade deres helse og utvikling, får nødvendig hjelp, omsorg og beskyttelse til rett tid.
-
-## Kilder:
-- **Kilde 1:**
-  - lov_navn: Grunnloven
-  - lov_id: lov-1814-05-17-1
-  - kapittel_nr: A
-  - kapittel_tittel: Statsformen og religionen
-  - paragraf_nr: 1
-  - paragraf_tittel: Statsform
-  - sist_oppdatert: 2020-05-14
-  - ikrafttredelse: 1814-05-17
-
-- **Kilde 2:**
-  - lov_navn: Barnevernloven
-  - lov_id: lov-1992-07-17-100
-  - kapittel_nr: 1
-  - kapittel_tittel: Formål og virkeområde
-  - paragraf_nr: 1
-  - paragraf_tittel: Lovens formål
-  - sist_oppdatert: 2021-06-18
-  - ikrafttredelse: 1993-01-01
-
-## Nøkkelbegreper:
-- lovverk
-- norsk lov
-"""
-            mcp_logger.info("Returnerer dummy-respons")
-            return dummy_response
+            except Exception as e:
+                mcp_logger.error(f"Feil ved søk: {str(e)}")
+                # Kast feilen videre istedenfor å falle tilbake til dummy-data
+                raise e
         
         @self.mcp.tool()
         async def hent_lovtekst(lov_id: str) -> str:
@@ -302,113 +264,59 @@ Basert på ditt spørsmål har jeg funnet følgende relevante lover:
             """
             mcp_logger.info(f"Henter lovtekst med id: {lov_id}")
             
-            if USING_RETRIEVAL_GRAPH:
-                try:
-                    # Bruk hovedgrafen med spesifikk dokument-ID-spørring
-                    config = RunnableConfig(
-                        configurable={
-                            "retriever_provider": "pinecone",
-                            "embedding_model": "openai/text-embedding-3-small",
-                            "query_model": "openai/gpt-4o-mini",
-                            "response_model": "openai/gpt-4o-mini",
-                            "search_kwargs": {"k": 1}
-                        }
-                    )
-                    
-                    query = f"Hent lovtekst med id {lov_id}"
-                    mcp_logger.info(f"Invoker retrieval_graph for å hente dokument: {lov_id}")
-                    result = await retrieval_graph.ainvoke(
-                        {"messages": [HumanMessage(content=query)]},
-                        config,
-                    )
-                    
-                    # Logg resultatet for debugging
-                    mcp_logger.info(f"Graf-resultat ved dokumenthenting: {type(result)}")
-                    
-                    # Hvis grafen har generert et komplett svar via messages, bruk dette
-                    if isinstance(result, dict) and 'messages' in result and result['messages']:
-                        # Finn siste AI-melding i messages-listen
-                        messages = result['messages']
-                        mcp_logger.info(f"Mottok {len(messages)} meldinger fra grafen")
-                        
-                        # Gå gjennom meldingene bakfra for å finne siste AI-melding
-                        ai_message = None
-                        for msg in reversed(messages):
-                            # Sjekk om dette er en AI-melding
-                            if (isinstance(msg, dict) and msg.get('type') == 'ai') or (hasattr(msg, 'type') and msg.type == 'ai'):
-                                ai_message = msg
-                                break
-                        
-                        if ai_message:
-                            # Hent content fra AI-meldingen og returner direkte
-                            if hasattr(ai_message, 'content'):
-                                mcp_logger.info("Returnerer content fra AI-melding")
-                                return ai_message.content
-                            elif isinstance(ai_message, dict) and 'content' in ai_message:
-                                mcp_logger.info("Returnerer content fra AI-melding")
-                                return ai_message['content']
-                    
-                    # Hvis ingen AI-melding ble funnet, returner en feilmelding
-                    mcp_logger.warning("Ingen AI-melding funnet i resultatet")
-                    return f"Beklager, jeg kunne ikke finne lovtekst med ID {lov_id}."
-                    
-                except Exception as e:
-                    mcp_logger.error(f"Feil ved henting av dokument: {str(e)}")
-                    mcp_logger.warning("Faller tilbake til dummy-implementasjon for dokumenthenting")
-                    # Fall tilbake til dummy-implementasjon ved feil
-            
-            # Dummy-implementasjon for testing eller fallback
-            dummy_lov_navn = ""
-            dummy_text = ""
-            
-            if lov_id == "lov-1814-05-17-1":
-                dummy_lov_navn = "Grunnloven"
-                dummy_text = "Kongeriket Norges Grunnlov, gitt i riksforsamlingen på Eidsvoll den 17. mai 1814, slik den lyder etter senere endringer. § 1. Kongeriket Norge er et fritt, selvstendig, udelelig og uavhendelig rike."
-            elif lov_id == "lov-1992-07-17-100":
-                dummy_lov_navn = "Barnevernloven"
-                dummy_text = "Lov om barneverntjenester (barnevernloven). Lovens formål er å sikre at barn og unge som lever under forhold som kan skade deres helse og utvikling, får nødvendig hjelp, omsorg og beskyttelse til rett tid."
-            else:
-                dummy_text = f"Lovtekst for {lov_id} er ikke tilgjengelig."
-                dummy_lov_navn = f"Ukjent lov ({lov_id})"
+            try:
+                # Bruk hovedgrafen med spesifikk dokument-ID-spørring
+                config = RunnableConfig(
+                    configurable={
+                        "retriever_provider": "pinecone",
+                        "embedding_model": "openai/text-embedding-3-small",
+                        "query_model": "openai/gpt-4o-mini",
+                        "response_model": "openai/gpt-4o-mini",
+                        "search_kwargs": {"k": 1}
+                    }
+                )
                 
-            dummy_response = f"""
-Her er lovteksten for {dummy_lov_navn} ({lov_id}):
-
-{dummy_text}
-
-## Kilder:
-- **Kilde 1:**
-  - lov_navn: {dummy_lov_navn}
-  - lov_id: {lov_id}
-  - dokumenttype: lovtekst
-  - status: gjeldende
-"""
-            if lov_id == "lov-1814-05-17-1":
-                dummy_response += """  - kapittel_nr: A
-  - kapittel_tittel: Statsformen og religionen
-  - paragraf_nr: 1
-  - paragraf_tittel: Statsform
-  - sist_oppdatert: 2020-05-14
-  - ikrafttredelse: 1814-05-17
-"""
-            elif lov_id == "lov-1992-07-17-100":
-                dummy_response += """  - kapittel_nr: 1
-  - kapittel_tittel: Formål og virkeområde
-  - paragraf_nr: 1
-  - paragraf_tittel: Lovens formål
-  - sist_oppdatert: 2021-06-18
-  - ikrafttredelse: 1993-01-01
-  - departement: Barne- og familiedepartementet
-"""
-            
-            dummy_response += """
-## Nøkkelbegreper:
-- lovverk
-- norsk lov
-"""
-            
-            mcp_logger.info("Returnerer dummy-lovtekst")
-            return dummy_response
+                query = f"Hent lovtekst med id {lov_id}"
+                mcp_logger.info(f"Invoker retrieval_graph for å hente dokument: {lov_id}")
+                result = await retrieval_graph.ainvoke(
+                    {"messages": [HumanMessage(content=query)]},
+                    config,
+                )
+                
+                # Logg resultatet for debugging
+                mcp_logger.info(f"Graf-resultat ved dokumenthenting: {type(result)}")
+                
+                # Hvis grafen har generert et komplett svar via messages, bruk dette
+                if isinstance(result, dict) and 'messages' in result and result['messages']:
+                    # Finn siste AI-melding i messages-listen
+                    messages = result['messages']
+                    mcp_logger.info(f"Mottok {len(messages)} meldinger fra grafen")
+                    
+                    # Gå gjennom meldingene bakfra for å finne siste AI-melding
+                    ai_message = None
+                    for msg in reversed(messages):
+                        # Sjekk om dette er en AI-melding
+                        if (isinstance(msg, dict) and msg.get('type') == 'ai') or (hasattr(msg, 'type') and msg.type == 'ai'):
+                            ai_message = msg
+                            break
+                    
+                    if ai_message:
+                        # Hent content fra AI-meldingen og returner direkte
+                        if hasattr(ai_message, 'content'):
+                            mcp_logger.info("Returnerer content fra AI-melding")
+                            return ai_message.content
+                        elif isinstance(ai_message, dict) and 'content' in ai_message:
+                            mcp_logger.info("Returnerer content fra AI-melding")
+                            return ai_message['content']
+                
+                # Hvis ingen AI-melding ble funnet, returner en feilmelding
+                mcp_logger.warning("Ingen AI-melding funnet i resultatet")
+                return f"Beklager, jeg kunne ikke finne lovtekst med ID {lov_id}."
+                
+            except Exception as e:
+                mcp_logger.error(f"Feil ved henting av dokument: {str(e)}")
+                # Kast feilen videre istedenfor å falle tilbake til dummy-data
+                raise e
     
     def run(self):
         """Start MCP-serveren med valgt transport."""
