@@ -371,6 +371,443 @@ class LovdataMCPServer:
                 mcp_logger.error(f"Feil ved henting av lovtekst: {str(e)}")
                 # Kast feilen videre
                 raise e
+        
+        @self.mcp.tool()
+        async def analyser_juridisk_sporsmal(sporsmal: str, kontekst: str = "") -> str:
+            """
+            Analyserer et juridisk spørsmål og identifiserer relevante rettsområder og rettskilder.
+            
+            BRUK DETTE VERKTØYET NÅR:
+            - Brukeren ber om juridisk hjelp, analyse, vurdering eller råd
+            - Brukeren stiller et spørsmål om lovlighet, rettigheter eller plikter
+            - Brukeren spør "hva sier loven om X?" eller lignende
+            - Brukeren vil vite om noe er lovlig, ulovlig eller hvordan reglene skal tolkes
+            - Brukeren trenger hjelp til å forstå juridiske problemstillinger
+            - Enhver forespørsel om juridisk analyse eller vurdering av et rettsspørsmål
+            - Brukeren nevner "juridisk vurdering" eller "rettslig vurdering" 
+            - Brukeren ber om å få vurdert et juridisk problem eller en rettslig situasjon
+            - Bruker nevner "rettsposisjon", "rettsstilling" eller "rettslig standpunkt"
+            - Brukeren ber om hjelp til tolkning av lover, forskrifter eller juridiske dokumenter
+            - Brukeren ønsker juridisk argumentasjon for eller imot et standpunkt
+            
+            Dette er ALLTID det første steget i en juridisk analyse og skal brukes før andre 
+            juridiske verktøy som juridisk_rettsanvendelse, djevelens_advokat eller juridisk_tankerekke.
+            
+            Eksempel på triggere:
+            - "Kan du hjelpe meg med en juridisk analyse?"
+            - "Jeg lurer på om jeg har rett til X"
+            - "Er det lovlig å..."
+            - "Hva sier loven om..."
+            - "Hvilke rettigheter har jeg når..."
+            - "Kan jeg bli straffet for å..."
+            
+            Dette verktøyet hjelper med å:
+            - Identifisere konkrete juridiske problemstillinger
+            - Finne de relevante rettsområdene (f.eks. privatrett, offentlig rett, arbeidsrett)
+            - Avklare hvilke lover og forskrifter som er mest relevante for spørsmålet
+            - Strukturere den juridiske analysen
+            
+            Args:
+                sporsmal: Det juridiske spørsmålet som skal analyseres
+                kontekst: Ytterligere bakgrunnsinformasjon om situasjonen (valgfritt)
+            
+            Returns:
+                Strukturert analyse med identifiserte problemstillinger og relevante rettskilder
+            """
+            mcp_logger.info(f"Utfører juridisk problemanalyse: {sporsmal}")
+            
+            try:
+                system_prompt = """
+                Du er en erfaren juridisk ekspert med spesialkompetanse i norsk rett og juridisk metode.
+                
+                Din oppgave er å analysere et juridisk spørsmål og identifisere:
+                
+                1. PRESISE PROBLEMSTILLINGER: Omformuler spørsmålet til konkrete juridiske problemstillinger
+                   - Fokuser på det juridiske kjerneproblemet
+                   - Skill mellom hovedproblemstillinger og underproblemstillinger
+                   - Bruk juridisk korrekt terminologi
+                
+                2. RETTSOMRÅDE: Identifiser hvilke rettsområder spørsmålet berører
+                   - Privatrett: avtalerett, kontraktsrett, erstatningsrett, familierett, etc.
+                   - Offentlig rett: forvaltningsrett, miljørett, helserett, etc.
+                   - Strafferett: forbrytelser, strafferammer, straffeprosess
+                   - Prosessrett: sivilprosess, tvisteløsning
+                   - Spesialområder: arbeidsrett, skatterett, immaterialrett, personvernrett, etc.
+                
+                3. RELEVANTE RETTSKILDER: Identifiser hvilke primære rettskilder som er aktuelle
+                   - Lov og forskrift: Hvilke konkrete lover og paragrafer er relevante?
+                   - Forarbeider: Er forarbeidene viktige for tolkning av lovbestemmelsene?
+                   - Rettspraksis: Finnes det relevante høyesterettsdommer eller underrettspraksis?
+                   - Forvaltningspraksis: Er myndighetspraksis relevant?
+                   - Sedvanerett: Finnes det sedvanerett på området?
+                   - Juridisk teori: Er det relevant juridisk litteratur?
+                   - Reelle hensyn: Hvilke formålsbetraktninger er relevante?
+                
+                4. FAKTISKE FORHOLD: Identifiser hvilke faktiske opplysninger som er nødvendige
+                   - Hvilke faktiske forhold må avklares for å kunne besvare spørsmålet?
+                   - Er det faktiske gråsoner eller uklarheter som påvirker vurderingen?
+                
+                Oppgi INGEN JURIDISK KONKLUSJON i dette steget, kun analyse av problemstillingen.
+                
+                Formater responsen tydelig med overskrifter og underpunkter.
+                """
+                
+                user_prompt = f"JURIDISK SPØRSMÅL: {sporsmal}\n\n"
+                if kontekst:
+                    user_prompt += f"KONTEKST: {kontekst}\n\n"
+                user_prompt += "Gjennomfør en systematisk problemanalyse basert på juridisk metode."
+                
+                # Kall OpenAI API (GPT-4o eller annen passende modell)
+                from openai import OpenAI
+                client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+                
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    temperature=0.1,  # Lav temperatur for konsistente, analytiske svar
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ]
+                )
+                
+                resultat = response.choices[0].message.content
+                
+                # Legg til veiledning om neste steg
+                neste_steg = """
+                
+                NESTE STEG: For å fortsette denne juridiske vurderingen, bruk juridisk_rettsanvendelse med:
+                - problem: Velg den mest sentrale problemstillingen fra analysen over
+                - fakta: Presenter relevante fakta fra konteksten
+                - rettskilder: Inkluder de mest relevante rettskildene fra analysen
+                """
+                
+                return resultat + neste_steg
+            
+            except Exception as e:
+                mcp_logger.error(f"Feil ved juridisk problemanalyse: {str(e)}")
+                raise e
+        
+        @self.mcp.tool()
+        async def juridisk_rettsanvendelse(problem: str, fakta: str, rettskilder: str = "") -> str:
+            """
+            Anvender rettsregler på konkrete fakta og gir en begrunnet juridisk vurdering.
+            
+            BRUK DETTE når du har identifisert problemstillinger og relevante rettskilder,
+            og trenger en konkret rettslig vurdering av situasjonen.
+            
+            Args:
+                problem: Den juridiske problemstillingen som skal vurderes
+                fakta: Relevante fakta i saken
+                rettskilder: Spesifikke rettskilder som skal vurderes (valgfritt)
+            
+            Returns:
+                Juridisk vurdering med subsumpsjon og argumenter for konklusjonen
+            """
+            mcp_logger.info(f"Utfører juridisk rettsanvendelse for problem: {problem}")
+            
+            try:
+                # Hvis rettskilder ikke er oppgitt, søk etter relevante rettskilder
+                if not rettskilder or len(rettskilder.strip()) < 20:
+                    try:
+                        mcp_logger.info("Søker etter relevante rettskilder...")
+                        # Bruk det eksisterende sok_i_lovdata-verktøyet
+                        rettskilder_resultat = await sok_i_lovdata(f"Relevante rettskilder for {problem}", 15)
+                        if rettskilder:
+                            rettskilder += "\n\n" + rettskilder_resultat
+                        else:
+                            rettskilder = rettskilder_resultat
+                    except Exception as e:
+                        mcp_logger.warning(f"Kunne ikke søke etter rettskilder: {str(e)}")
+                
+                system_prompt = """
+                Du er en erfaren juridisk ekspert med dyp kunnskap om norsk rett og juridisk metode.
+                
+                Din oppgave er å gjennomføre en grundig rettsanvendelse basert på juridisk metode. 
+                Rettsanvendelse er prosessen der generelle rettsregler anvendes på konkrete fakta (subsumpsjon).
+                
+                Følg juridisk metode strukturert og grundig:
+                
+                1. RETTSLIG GRUNNLAG: Klargjør det rettslige grunnlaget
+                   - Identifiser relevante lovbestemmelser og andre rettskilder
+                   - Analyser vilkårssiden: Hvilke vilkår må være oppfylt?
+                   - Analyser virkningssiden: Hva blir konsekvensene hvis vilkårene er oppfylt?
+                   - Tolkningsprinsipper: Bruk anerkjente tolkningsprinsipper (ordlyd, kontekst, formål)
+                
+                2. SUBSUMSJON: Anvend rettsreglene på de konkrete fakta
+                   - Vurder systematisk om hvert vilkår er oppfylt basert på faktum
+                   - Utfør detaljert subsumsjon for hvert vilkår
+                   - Håndter tvetydigheter i fakta på en balansert måte
+                   - Følg logisk struktur fra vilkår til vilkår
+                
+                3. ARGUMENTASJON: Begrunn vurderingene
+                   - Støtt deg på autoritative rettskilder
+                   - Vurder rettskildevekten til ulike kilder
+                   - Begrunn tolkningsvalg med relevante argumenter
+                   - Bruk juridisk metode konsekvent
+                
+                4. DELKONKLUSJON: Formuler foreløpig juridisk konklusjon
+                   - Formuler en klar konklusjon på det juridiske spørsmålet
+                   - Presiser hvilke vilkår som er/ikke er oppfylt
+                   - Angi rettsvirkningen som følger av konklusjonen
+                
+                Bruk korrekt juridisk terminologi og strukturer responsen tydelig med overskrifter.
+                Vurderingen skal være grundig, analytisk og balansert, men på dette stadiet uten 
+                eksplisitt vurdering av motargumenter (disse vurderes i neste steg).
+                """
+                
+                user_prompt = f"""
+                JURIDISK PROBLEMSTILLING: {problem}
+                
+                FAKTA: {fakta}
+                
+                RETTSKILDER: 
+                {rettskilder}
+                
+                Gjennomfør en systematisk rettsanvendelse basert på juridisk metode. 
+                Vær grundig i din analyse av rettsgrunnlag og subsumsjon.
+                """
+                
+                # Kall OpenAI API
+                from openai import OpenAI
+                client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+                
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    temperature=0.2,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ]
+                )
+                
+                resultat = response.choices[0].message.content
+                
+                # Legg til veiledning om neste steg
+                neste_steg = """
+                
+                NESTE STEG: For å teste robustheten i denne vurderingen, bruk djevelens_advokat med:
+                - problem: den samme problemstillingen som over
+                - vurdering: hele denne rettsanvendelsen
+                """
+                
+                return resultat + neste_steg
+            
+            except Exception as e:
+                mcp_logger.error(f"Feil ved juridisk rettsanvendelse: {str(e)}")
+                raise e
+        
+        @self.mcp.tool()
+        async def djevelens_advokat(problem: str, vurdering: str) -> str:
+            """
+            Aktivt utfordrer en juridisk vurdering ved å identifisere svakheter og alternative tolkninger.
+            
+            BRUK DETTE for å systematisk utfordre en juridisk konklusjon fra alle vinkler:
+            - Finne alternative tolkninger av lovteksten
+            - Identifisere faktorer som kan ha blitt oversett
+            - Påpeke hull i argumentasjonen
+            - Finne motstridende rettspraksis eller hensyn
+            
+            Args:
+                problem: Den juridiske problemstillingen som er vurdert
+                vurdering: Den juridiske vurderingen som skal kritiseres
+            
+            Returns:
+                Systematisk kritikk og motargumenter til den juridiske vurderingen
+            """
+            mcp_logger.info(f"Utfører djevelens advokat analyse for problem: {problem}")
+            
+            try:
+                system_prompt = """
+                Du er en svært kritisk juridisk ekspert med spesialoppdrag som "djevelens advokat".
+                
+                Din ENESTE oppgave er å finne svakheter, motargumenter og alternative tolkninger 
+                til en juridisk vurdering, uansett hvor solid den kan virke. Du skal være det 
+                ultimate korreksjonsverktøyet for juridiske vurderinger.
+                
+                Følg disse prinsippene kompromissløst:
+                
+                1. ALTERNATIVE TOLKNINGER: 
+                   - Identifiser alternative tolkninger av lovbestemmelser og andre rettskilder
+                   - Utfordre ordlydstolkninger med kontekstuelle, formålsrettede eller dynamiske tolkninger
+                   - Fremhev tolkningsalternativer som leder til motsatt resultat
+                
+                2. SVAKHETER I RETTSKILDEBRUK: 
+                   - Påpek oversette eller undervurderte rettskilder
+                   - Kritiser vektingen av rettskildene
+                   - Fremhev motstridende rettskilder som ikke er nevnt
+                   - Pek på nyere rettspraksis eller rettsutvikling som kan endre vurderingen
+                
+                3. LOGISKE BRISTER: 
+                   - Identifiser logiske feilslutninger eller svakheter i argumentasjonen
+                   - Påpek steder der premissene ikke støtter konklusjonen
+                   - Finn hull i resonnementer eller utelatte mellomliggende steg
+                
+                4. OVERSEEDE FAKTA OG NYANSER:
+                   - Identifiser faktorer som kan ha blitt oversett i faktavurderingen
+                   - Fremhev alternative tolkninger av faktum
+                   - Påpek tvetydigheter eller uklarheter i faktagrunnlaget
+                
+                5. REELLE HENSYN OG KONSEKVENSER:
+                   - Identifiser oversette reelle hensyn som taler mot konklusjonen
+                   - Påpek potensielle uheldige konsekvenser av konklusjonen
+                   - Fremhev verdier og formål som blir nedprioritert i vurderingen
+                
+                VIKTIG: Du skal IKKE være konstruktiv eller balansert. Din rolle er UTELUKKENDE 
+                å utfordre, problematisere og finne svakheter. Ikke anerkjenn styrker ved 
+                vurderingen. Vær grundig, skarp og ubarmhjertig i din kritikk, men samtidig saklig 
+                og faglig solid med basis i juridisk metode.
+                
+                Strukturer responsen tydelig med overskrifter for de ulike kategoriene av motargumenter.
+                """
+                
+                user_prompt = f"""
+                JURIDISK PROBLEMSTILLING: {problem}
+                
+                JURIDISK VURDERING SOM SKAL KRITISERES: 
+                {vurdering}
+                
+                Finn alle mulige svakheter, motargumenter og alternative tolkninger til denne 
+                juridiske vurderingen. Vær ubarmhjertig i din kritikk.
+                """
+                
+                # Kall OpenAI API
+                from openai import OpenAI
+                client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+                
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    temperature=0.4,  # Litt høyere temperatur for mer kreativ kritikk
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ]
+                )
+                
+                resultat = response.choices[0].message.content
+                
+                # Legg til veiledning om neste steg
+                neste_steg = """
+                
+                NESTE STEG: For å utarbeide en endelig balansert konklusjon, bruk juridisk_tankerekke med:
+                - problem: den samme problemstillingen som over
+                - vurdering: den opprinnelige rettsanvendelsen
+                - motargumenter: motargumentene identifisert her
+                """
+                
+                return resultat + neste_steg
+            
+            except Exception as e:
+                mcp_logger.error(f"Feil ved djevelens advokat analyse: {str(e)}")
+                raise e
+        
+        @self.mcp.tool()
+        async def juridisk_tankerekke(problem: str, vurdering: str, motargumenter: str) -> str:
+            """
+            Utarbeider en grundig juridisk konklusjon gjennom en eksplisitt tankerekke.
+            
+            BRUK DETTE som siste steg for å få en transparent juridisk vurdering som:
+            - Viser steg-for-steg resonnering
+            - Evaluerer argumenter og motargumenter eksplisitt
+            - Uttaler usikkerhetsmomenter
+            - Revurderer tidligere tanker når nødvendig
+            - Bygger opp til en velbegrunnet juridisk konklusjon
+            
+            Args:
+                problem: Den juridiske problemstillingen
+                vurdering: Den opprinnelige rettsanvendelsen
+                motargumenter: Motargumenter fra djevelens advokat
+            
+            Returns:
+                En detaljert tankerekke som leder fram til en juridisk konklusjon
+            """
+            mcp_logger.info(f"Utfører juridisk tankerekke for problem: {problem}")
+            
+            try:
+                system_prompt = """
+                Du er en erfaren høyesterettsdommer med ekspertise i norsk rett og juridisk metode.
+                
+                Din oppgave er å tenke høyt og grundig gjennom et juridisk spørsmål basert på 
+                opprinnelig rettsanvendelse og motargumenter. Du skal vise en transparent tankerekke
+                som leder til en endelig juridisk konklusjon.
+                
+                Følg denne systematiske tilnærmingen:
+                
+                1. Presenter tankene dine som nummererte steg, hvor hvert steg bygger på det forrige.
+                
+                2. For hver tanke, følg disse prinsippene:
+                   - Vær villig til å revurdere tidligere resonnementer
+                   - Vis når og hvorfor du endrer oppfatning
+                   - Uttrykk usikkerhet når det er relevant
+                   - Veie argumenter og motargumenter eksplisitt
+                   - Skille mellom sikre og usikre konklusjoner
+                
+                3. Din tankerekke bør inkludere:
+                   - Innledende refleksjoner om problemstillingen
+                   - Vurdering av hovedargumentene fra rettsanvendelsen
+                   - Kritisk evaluering av motargumentene
+                   - Avveining mellom motstridende hensyn
+                   - Vurdering av ulike tolkningsalternativer
+                   - Refleksjon om rettskildevekt og metodiske utfordringer
+                   - Overveielse av praktiske konsekvenser
+                   - Vurdering av usikkerhetsmomenter
+                
+                4. Avslutt med en endelig juridisk konklusjon som:
+                   - Er klar og presis på det juridiske spørsmålet
+                   - Oppsummerer de viktigste argumentene som støtter konklusjonen
+                   - Erkjenner motargumentene og forklarer hvorfor de ikke er avgjørende
+                   - Angir graden av sikkerhet i konklusjonen
+                   - Identifiserer eventuelle begrensninger eller forbehold
+                
+                VIKTIG:
+                - Vis en ærlig tankerekke der du kan revurdere og nyansere underveis
+                - Vær balansert og ryddig i din endelige vurdering
+                - Bruk korrekt juridisk terminologi, men unngå unødig komplisert språk
+                - Tankerekken skal være autentisk, ikke bare en opplisting av argumenter
+                
+                Konklusjonen skal bygge på rettskildelære, grundig juridisk metode og balansert vurdering.
+                """
+                
+                user_prompt = f"""
+                JURIDISK PROBLEMSTILLING: {problem}
+                
+                OPPRINNELIG RETTSANVENDELSE: 
+                {vurdering}
+                
+                MOTARGUMENTER: 
+                {motargumenter}
+                
+                Gjennomfør en grundig juridisk tankerekke som evaluerer argumenter og motargumenter, 
+                og som leder fram til en endelig juridisk konklusjon. Vis eksplisitt hvordan du tenker 
+                steg for steg.
+                """
+                
+                # Kall OpenAI API
+                from openai import OpenAI
+                client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+                
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    temperature=0.2,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ]
+                )
+                
+                resultat = response.choices[0].message.content
+                
+                # Legg til avsluttende kommentar
+                avslutning = """
+                
+                JURIDISK VURDERING FULLFØRT: Dette er den endelige juridiske vurderingen basert på 
+                metodisk analyse, kritisk evaluering og transparent tankerekke.
+                """
+                
+                return resultat + avslutning
+            
+            except Exception as e:
+                mcp_logger.error(f"Feil ved juridisk tankerekke: {str(e)}")
+                raise e
     
     def run(self):
         """Start MCP-serveren med valgt transport."""
