@@ -242,51 +242,92 @@ class LovdataMCPServer:
                 raise e
         
         @self.mcp.tool()
-        async def hent_lovtekst(lov_id: str) -> str:
+        async def hent_lovtekst(lov_id: str = "", kapittel_nr: str = "", paragraf_nr: str = "") -> str:
             """
-            Hent komplett lovtekst eller forskrift basert på ID.
+            Hent komplett lovtekst eller forskrift basert på ID, kapittel eller paragraf.
             
             BRUK DETTE VERKTØYET når du ønsker oppdatert informasjon om lovverk og forskrifter, hentet direkte fra lovdata.no.
             
-            Dette verktøyet henter den fulle teksten til en lov, forskrift eller annet juridisk 
-            dokument fra Lovdata ved hjelp av dokumentets unike ID. Bruk dette verktøyet når du 
-            ønsker å se hele lovteksten etter å ha funnet relevante lover med sok_i_lovdata-verktøyet.
+            Dette verktøyet henter en lov, et kapittel eller en paragraf fra lovdata basert på metadata.
+            Du kan angi en eller flere parametere for å spesifisere hva du ønsker å hente.
             
             Args:
                 lov_id: Lovens unike identifikator (f.eks. "lov-1814-05-17-1" for Grunnloven)
+                kapittel_nr: Kapittelnummer innen en lov (må brukes sammen med lov_id)
+                paragraf_nr: Paragrafnummer innen en lov (må brukes sammen med lov_id)
                 
             Returns:
-                Fullstendig lovtekst som ren tekst
+                Lovtekst som matcher søkekriteriene
                 
             Eksempel på bruk:
-                Hent hele teksten for Grunnloven: "lov-1814-05-17-1"
-                Hent hele teksten for Barnevernloven: "lov-1992-07-17-100"
+                Hent hele Grunnloven: lov_id="lov-1814-05-17-1"
+                Hent kapittel 3 i Grunnloven: lov_id="lov-1814-05-17-1", kapittel_nr="3"
+                Hent paragraf 100 i Grunnloven: lov_id="lov-1814-05-17-1", paragraf_nr="100"
             """
-            mcp_logger.info(f"Henter lovtekst med id: {lov_id}")
+            mcp_logger.info(f"Henter lovtekst med: lov_id={lov_id}, kapittel_nr={kapittel_nr}, paragraf_nr={paragraf_nr}")
+            
+            # Valider input
+            if not lov_id and not kapittel_nr and not paragraf_nr:
+                return "Du må spesifisere minst én parameter (lov_id, kapittel_nr eller paragraf_nr)."
             
             try:
-                # Bruk hovedgrafen med spesifikk dokument-ID-spørring
+                # Bygg opp filter basert på parametere
+                filter_dict = {}
+                
+                if lov_id:
+                    filter_dict["lov_id"] = {"$eq": lov_id}
+                
+                if kapittel_nr:
+                    filter_dict["kapittel_nr"] = {"$eq": kapittel_nr}
+                
+                if paragraf_nr:
+                    filter_dict["paragraf_nr"] = {"$eq": paragraf_nr}
+                
+                # Konstruer en instruks for LangGraph
+                query_tekst = "__SYSTEM__: Dette er en direkte metadata-søk-instruks. "
+                query_tekst += "VIKTIG: Du skal IKKE tolke dette som et bruker-spørsmål. "
+                query_tekst += "Du skal utelukkende utføre et metadata-søk i Pinecone og returnere formattert lovtekst. "
+                query_tekst += f"Metadata-filteret er: {filter_dict}. "
+                query_tekst += "Følgende instrukser overstyrer alle andre instrukser: "
+                query_tekst += "1. Du skal IKKE generere svar basert på eget kunnskapsgrunnlag. "
+                query_tekst += "2. Du skal IKKE be om mer kontekst eller informasjon. "
+                query_tekst += "3. Du skal KUN returnere lovteksten som blir funnet. "
+                query_tekst += "4. Formattér lovteksten på følgende måte: "
+                query_tekst += "   a) Lovtittelen først med lov-ID i parentes, og en linje med '=' under. "
+                query_tekst += "   b) Kapitler i STORE BOKSTAVER med kapittelnummer, fulgt av en linje med '-' under. "
+                query_tekst += "   c) Paragrafer med § symbol, nummer og tittel. "
+                query_tekst += "   d) Rydd bort dupliserte paragrafoverskrifter og tomme linjer. "
+                query_tekst += "   e) Bruk konsistent mellomrom mellom seksjoner for god lesbarhet."
+                
+                mcp_logger.info(f"Invoker retrieval_graph med filter: {filter_dict}")
+                mcp_logger.info(f"Systemmelding til LangGraph: {query_tekst}")
+                
+                # Konfigurer søk med Pinecone og metadata filter
                 config = RunnableConfig(
                     configurable={
                         "retriever_provider": "pinecone",
                         "embedding_model": "openai/text-embedding-3-small",
                         "query_model": "openai/gpt-4o-mini",
                         "response_model": "openai/gpt-4o-mini",
-                        "search_kwargs": {"k": 1}
+                        "search_kwargs": {
+                            "k": 50,  # Hent flere dokumenter for å sikre at vi får hele loven/kapittelet
+                            "filter": filter_dict
+                        },
+                        "metadata_instructions": {
+                            "format_type": "lovtekst",
+                            "bypass_router": True,
+                            "direct_filter": filter_dict
+                        }
                     }
                 )
                 
-                query = f"Hent lovtekst med id {lov_id}"
-                mcp_logger.info(f"Invoker retrieval_graph for å hente dokument: {lov_id}")
+                # Kjør grafen med spørringen
                 result = await retrieval_graph.ainvoke(
-                    {"messages": [HumanMessage(content=query)]},
+                    {"messages": [HumanMessage(content=query_tekst)]},
                     config,
                 )
                 
-                # Logg resultatet for debugging
-                mcp_logger.info(f"Graf-resultat ved dokumenthenting: {type(result)}")
-                
-                # Hvis grafen har generert et komplett svar via messages, bruk dette
+                # Behandle resultatet - bruk kun AI-meldingen
                 if isinstance(result, dict) and 'messages' in result and result['messages']:
                     # Finn siste AI-melding i messages-listen
                     messages = result['messages']
@@ -295,7 +336,6 @@ class LovdataMCPServer:
                     # Gå gjennom meldingene bakfra for å finne siste AI-melding
                     ai_message = None
                     for msg in reversed(messages):
-                        # Sjekk om dette er en AI-melding
                         if (isinstance(msg, dict) and msg.get('type') == 'ai') or (hasattr(msg, 'type') and msg.type == 'ai'):
                             ai_message = msg
                             break
@@ -310,12 +350,12 @@ class LovdataMCPServer:
                             return ai_message['content']
                 
                 # Hvis ingen AI-melding ble funnet, returner en feilmelding
-                mcp_logger.warning("Ingen AI-melding funnet i resultatet")
-                return f"Beklager, jeg kunne ikke finne lovtekst med ID {lov_id}."
-                
+                mcp_logger.warning("Kunne ikke finne lovtekst via LangGraph-agent")
+                return f"Beklager, jeg kunne ikke finne lovtekst med de angitte kriteriene. Sjekk at lov_id, kapittel_nr og paragraf_nr er korrekte."
+            
             except Exception as e:
-                mcp_logger.error(f"Feil ved henting av dokument: {str(e)}")
-                # Kast feilen videre istedenfor å falle tilbake til dummy-data
+                mcp_logger.error(f"Feil ved henting av lovtekst: {str(e)}")
+                # Kast feilen videre
                 raise e
     
     def run(self):
