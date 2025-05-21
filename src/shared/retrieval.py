@@ -114,27 +114,6 @@ def make_pinecone_retriever(
         logger.info(f"Pinecone Index type: {type(index)}")
         logger.info(f"VectorStore type: {type(vectorstore)}")
         
-        # Hent et eksempeldokument for å verifisere struktur hvis mulig
-        try:
-            # Prøv å hente et dokument for å verifisere strukturen
-            from pinecone import QueryFilter
-            results = index.query(
-                vector=[0.0] * 1536,  # Dummy vector
-                top_k=1,
-                include_metadata=True
-            )
-            if results.matches and len(results.matches) > 0:
-                sample_doc = results.matches[0]
-                logger.info(f"Eksempel på dokumentstruktur fra Pinecone:")
-                logger.info(f"ID: {sample_doc.id}")
-                logger.info(f"Metadata nøkler: {list(sample_doc.metadata.keys()) if sample_doc.metadata else 'Ingen metadata'}")
-                if "text" in sample_doc.metadata:
-                    logger.info("BEKREFTET: 'text' finnes i metadata")
-                else:
-                    logger.warning("ADVARSEL: 'text' finnes IKKE i metadata")
-        except Exception as e:
-            logger.warning(f"Kunne ikke hente eksempeldokument: {str(e)}")
-        
         # Opprett retriever med korrekt content_key
         retriever = vectorstore.as_retriever(
             search_kwargs={"k": 5},
