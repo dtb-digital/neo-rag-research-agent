@@ -501,24 +501,113 @@ class LovdataMCPServer:
                 rettskilder: Spesifikke rettskilder som skal vurderes (valgfritt)
             
             Returns:
-                Juridisk vurdering med subsumpsjon og argumenter for konklusjonen
+                Juridisk vurdering med subsumpsjon og argumenter for konklusjonen,
+                ELLER en spesifikasjon av hvilken informasjon som mangler hvis 
+                det ikke er tilstrekkelig for en fullstendig vurdering
             """
             mcp_logger.info(f"Utfører juridisk rettsanvendelse for problem: {problem}")
             
             try:
-                # Hvis rettskilder ikke er oppgitt, søk etter relevante rettskilder
-                if not rettskilder or len(rettskilder.strip()) < 20:
-                    try:
-                        mcp_logger.info("Søker etter relevante rettskilder...")
-                        # Bruk det eksisterende sok_i_lovdata-verktøyet
-                        rettskilder_resultat = await sok_i_lovdata(f"Relevante rettskilder for {problem}", 15)
-                        if rettskilder:
-                            rettskilder += "\n\n" + rettskilder_resultat
-                        else:
-                            rettskilder = rettskilder_resultat
-                    except Exception as e:
-                        mcp_logger.warning(f"Kunne ikke søke etter rettskilder: {str(e)}")
+                # Først sjekk om vi har tilstrekkelig informasjon for å utføre rettsanvendelsen
+                system_prompt_sjekk = """
+                Du er en juridisk ekspert som skal vurdere om du har tilstrekkelig informasjon til å foreta en juridisk vurdering.
                 
+                Evaluer om følgende informasjon er tilstrekkelig for å gi en grundig juridisk vurdering:
+                1. Er problemstillingen klar og spesifikk nok?
+                2. Er faktum tilstrekkelig detaljert?
+                3. Er det oppgitt relevante rettskilder (lover, forskrifter, rettspraksis)?
+                4. Hvilke spesifikke lover og bestemmelser trengs for å vurdere problemstillingen?
+                
+                VIKTIG: Du skal IKKE foreta en juridisk vurdering, men kun evaluere om informasjonen er tilstrekkelig.
+                Hvis informasjonen er utilstrekkelig, spesifiser NØYAKTIG hvilke lover, bestemmelser eller faktaopplysninger som mangler.
+                """
+                
+                user_prompt_sjekk = f"""
+                JURIDISK PROBLEMSTILLING: {problem}
+                
+                FAKTA: {fakta}
+                
+                OPPGITTE RETTSKILDER: 
+                {rettskilder if rettskilder else "Ingen oppgitte rettskilder."}
+                
+                Vurder om denne informasjonen er tilstrekkelig for å foreta en juridisk vurdering. 
+                Hvis ikke, spesifiser hvilke ekstra rettskilder eller faktaopplysninger som trengs.
+                """
+                
+                # Kall OpenAI API for å sjekke om vi har nok informasjon
+                from openai import OpenAI
+                client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+                
+                response_sjekk = client.chat.completions.create(
+                    model="gpt-4o",
+                    temperature=0.1,
+                    messages=[
+                        {"role": "system", "content": system_prompt_sjekk},
+                        {"role": "user", "content": user_prompt_sjekk}
+                    ]
+                )
+                
+                informasjons_vurdering = response_sjekk.choices[0].message.content
+                
+                # Sjekk om informasjonsvurderingen indikerer at vi mangler nødvendig informasjon
+                # Triggerord og fraser som indikerer manglende informasjon
+                mangler_informasjon_indikatorer = [
+                    "mangler", "utilstrekkelig", "trenger mer", "ikke nok", 
+                    "behøver ytterligere", "savner", "trenger", "ikke tilstrekkelig",
+                    "bør suppleres", "ufullstendig", "må ha", "krever",
+                    "ikke spesifikk nok", "må spesifiseres", "for vag"
+                ]
+                
+                mangler_informasjon = any(indikator in informasjons_vurdering.lower() for indikator in mangler_informasjon_indikatorer)
+                
+                if mangler_informasjon:
+                    # Analyser hvilke lover som trengs
+                    system_prompt_lov_analyse = """
+                    Du er en juridisk ekspert som skal identifisere nøyaktig hvilke lover og bestemmelser som trengs 
+                    for å vurdere en juridisk problemstilling.
+                    
+                    Basert på problemstillingen og faktum, oppgi en SPESIFIKK LISTE over lover, forskrifter og 
+                    rettskilder som er nødvendige for å foreta en grundig juridisk vurdering.
+                    
+                    Vær så KONKRET som mulig. Nevn lovene med offisielle navn og gjerne hvilke paragrafer som er relevante.
+                    Prioriter de viktigste rettskildene først.
+                    """
+                    
+                    response_lov_analyse = client.chat.completions.create(
+                        model="gpt-4o",
+                        temperature=0.1,
+                        messages=[
+                            {"role": "system", "content": system_prompt_lov_analyse},
+                            {"role": "user", "content": f"JURIDISK PROBLEMSTILLING: {problem}\n\nFAKTA: {fakta}"}
+                        ]
+                    )
+                    
+                    lover_trengs = response_lov_analyse.choices[0].message.content
+                    
+                    # Konstruer en informativ respons om hva som mangler
+                    respons = f"""
+                    VURDERING AV INFORMASJONSGRUNNLAG:
+                    
+                    {informasjons_vurdering}
+                    
+                    MANGLENDE RETTSKILDER:
+                    
+                    {lover_trengs}
+                    
+                    NESTE STEG: For å fortsette den juridiske vurderingen trenger du å innhente mer informasjon 
+                    som beskrevet ovenfor. Du kan:
+                    
+                    1. Bruke 'sok_i_lovdata' for å finne generell informasjon om de nevnte rettsområdene
+                    2. Bruke 'hent_lovtekst' for å hente spesifikke lover og bestemmelser som nevnt over
+                    
+                    VIKTIG: Når du har innhentet alle nødvendige rettskilder, bruk 'juridisk_rettsanvendelse' på nytt 
+                    med samme problem, samme fakta, og de innhentede rettskildene. Da vil jeg gjennomføre en fullstendig 
+                    juridisk vurdering.
+                    """
+                    
+                    return respons
+                
+                # Hvis vi har tilstrekkelig informasjon, fortsett med den juridiske vurderingen
                 system_prompt = """
                 Du er en erfaren juridisk ekspert med dyp kunnskap om norsk rett og juridisk metode.
                 
@@ -567,10 +656,7 @@ class LovdataMCPServer:
                 Vær grundig i din analyse av rettsgrunnlag og subsumsjon.
                 """
                 
-                # Kall OpenAI API
-                from openai import OpenAI
-                client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-                
+                # Kall OpenAI API for selve rettsanvendelsen
                 response = client.chat.completions.create(
                     model="gpt-4o",
                     temperature=0.2,
