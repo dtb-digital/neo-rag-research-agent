@@ -389,9 +389,8 @@ class LovdataMCPServer:
             - Bruker nevner "rettsposisjon", "rettsstilling" eller "rettslig standpunkt"
             - Brukeren ber om hjelp til tolkning av lover, forskrifter eller juridiske dokumenter
             - Brukeren ønsker juridisk argumentasjon for eller imot et standpunkt
-            
-            Dette er ALLTID det første steget i en juridisk analyse og skal brukes før andre 
-            juridiske verktøy som juridisk_rettsanvendelse, djevelens_advokat eller juridisk_tankerekke.
+            - Dette er ALLTID det første steget i en juridisk analyse og skal brukes før andre juridiske verktøy som juridisk_rettsanvendelse, djevelens_advokat eller juridisk_tankerekke.
+            - Brukeren ber eksplisitt om en vurdering som "Kan du gjøre en juridisk vurdering?"
             
             Eksempel på triggere:
             - "Kan du hjelpe meg med en juridisk analyse?"
@@ -400,6 +399,7 @@ class LovdataMCPServer:
             - "Hva sier loven om..."
             - "Hvilke rettigheter har jeg når..."
             - "Kan jeg bli straffet for å..."
+            - "Kan du gjøre en juridisk vurdering?"
             
             Dette verktøyet hjelper med å:
             - Identifisere konkrete juridiske problemstillinger
@@ -409,83 +409,73 @@ class LovdataMCPServer:
             
             Args:
                 sporsmal: Det juridiske spørsmålet som skal analyseres
-                kontekst: Ytterligere bakgrunnsinformasjon om situasjonen (valgfritt)
+                kontekst: Tilleggsinformasjon, inkludert tidligere nevnte lovhjemler og fakta fra dialogen
             
             Returns:
-                Strukturert analyse med identifiserte problemstillinger og relevante rettskilder
+                En strukturert analyse av det juridiske spørsmålet, som identifiserer rettsområder, 
+                relevante lover og forskrifter, og anbefaler neste steg i den juridiske vurderingen
             """
-            mcp_logger.info(f"Utfører juridisk problemanalyse: {sporsmal}")
+            # Kombiner spørsmålet og konteksten for å få et helhetlig bilde
+            full_input = f"SPØRSMÅL: {sporsmal}\n\n"
             
+            if kontekst:
+                full_input += f"KONTEKST FRA DIALOGEN (tidligere nevnte lover, paragrafer og faktum): {kontekst}\n\n"
+            
+            system_prompt = """
+            Du er en erfaren juridisk rådgiver med ekspertise i norsk rett. Din oppgave er å analysere et juridisk spørsmål og identifisere de relevante rettsområdene og rettskildene.
+            
+            Følg denne metoden:
+            1. Identifiser de konkrete juridiske problemstillingene i spørsmålet
+            2. Bestem hvilke rettsområder som er relevante (f.eks. miljørett, forvaltningsrett, erstatningsrett)
+            3. Identifiser de mest sentrale lovene og forskriftene som gjelder for spørsmålet
+            4. Beskriv hvilke paragrafer eller bestemmelser som er særlig relevante
+            5. Anbefal hvilke rettskilder som må undersøkes nærmere
+            
+            VIKTIG: Analyser nøye alle nevnte lovhjemler, paragrafer og faktiske opplysninger fra konteksten, og inkluder disse i din vurdering.
+            Dette vil sikre at etterfølgende juridisk vurdering har komplett informasjon.
+            
+            Svar i følgende format:
+            
+            ## Juridiske problemstillinger
+            [List opp de sentrale juridiske spørsmålene]
+            
+            ## Relevante rettsområder
+            [Beskriv hvilke rettsområder som er involvert]
+            
+            ## Sentrale lover og forskrifter
+            [List opp de mest relevante lovene og forskriftene]
+            
+            ## Spesifikke bestemmelser
+            [Nevn særlig relevante paragrafer og bestemmelser]
+            
+            ## Rettskilder som bør undersøkes
+            [Anbefal hvilke rettskilder som må gjennomgås]
+            
+            ## Faktiske opplysninger som trengs
+            [Beskriv hvilken faktisk informasjon som mangler for å kunne gjøre en fullstendig vurdering]
+            
+            ## Neste steg
+            [Anbefal om brukeren bør:
+            1. Søke etter ytterligere lover eller forskrifter med søk_i_lovdata-verktøyet
+            2. Hente spesifikke lovtekster med hent_lovtekst-verktøyet
+            3. Gå videre til juridisk rettsanvendelse hvis all nødvendig informasjon er tilgjengelig]
+            """
+            
+            from openai import AsyncOpenAI
+            client = AsyncOpenAI(api_key=self.openai_api_key)
             try:
-                system_prompt = """
-                Du er en erfaren juridisk ekspert med spesialkompetanse i norsk rett og juridisk metode.
-                
-                Din oppgave er å analysere et juridisk spørsmål og identifisere:
-                
-                1. PRESISE PROBLEMSTILLINGER: Omformuler spørsmålet til konkrete juridiske problemstillinger
-                   - Fokuser på det juridiske kjerneproblemet
-                   - Skill mellom hovedproblemstillinger og underproblemstillinger
-                   - Bruk juridisk korrekt terminologi
-                
-                2. RETTSOMRÅDE: Identifiser hvilke rettsområder spørsmålet berører
-                   - Privatrett: avtalerett, kontraktsrett, erstatningsrett, familierett, etc.
-                   - Offentlig rett: forvaltningsrett, miljørett, helserett, etc.
-                   - Strafferett: forbrytelser, strafferammer, straffeprosess
-                   - Prosessrett: sivilprosess, tvisteløsning
-                   - Spesialområder: arbeidsrett, skatterett, immaterialrett, personvernrett, etc.
-                
-                3. RELEVANTE RETTSKILDER: Identifiser hvilke primære rettskilder som er aktuelle
-                   - Lov og forskrift: Hvilke konkrete lover og paragrafer er relevante?
-                   - Forarbeider: Er forarbeidene viktige for tolkning av lovbestemmelsene?
-                   - Rettspraksis: Finnes det relevante høyesterettsdommer eller underrettspraksis?
-                   - Forvaltningspraksis: Er myndighetspraksis relevant?
-                   - Sedvanerett: Finnes det sedvanerett på området?
-                   - Juridisk teori: Er det relevant juridisk litteratur?
-                   - Reelle hensyn: Hvilke formålsbetraktninger er relevante?
-                
-                4. FAKTISKE FORHOLD: Identifiser hvilke faktiske opplysninger som er nødvendige
-                   - Hvilke faktiske forhold må avklares for å kunne besvare spørsmålet?
-                   - Er det faktiske gråsoner eller uklarheter som påvirker vurderingen?
-                
-                Oppgi INGEN JURIDISK KONKLUSJON i dette steget, kun analyse av problemstillingen.
-                
-                Formater responsen tydelig med overskrifter og underpunkter.
-                """
-                
-                user_prompt = f"JURIDISK SPØRSMÅL: {sporsmal}\n\n"
-                if kontekst:
-                    user_prompt += f"KONTEKST: {kontekst}\n\n"
-                user_prompt += "Gjennomfør en systematisk problemanalyse basert på juridisk metode."
-                
-                # Kall OpenAI API (GPT-4o eller annen passende modell)
-                from openai import OpenAI
-                client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-                
-                response = client.chat.completions.create(
-                    model="gpt-4o",
-                    temperature=0.1,  # Lav temperatur for konsistente, analytiske svar
+                completion = await client.chat.completions.create(
+                    model="gpt-4-turbo",
                     messages=[
                         {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ]
+                        {"role": "user", "content": full_input}
+                    ],
+                    temperature=0.1
                 )
-                
-                resultat = response.choices[0].message.content
-                
-                # Legg til veiledning om neste steg
-                neste_steg = """
-                
-                NESTE STEG: For å fortsette denne juridiske vurderingen, bruk juridisk_rettsanvendelse med:
-                - problem: Velg den mest sentrale problemstillingen fra analysen over
-                - fakta: Presenter relevante fakta fra konteksten
-                - rettskilder: Inkluder de mest relevante rettskildene fra analysen
-                """
-                
-                return resultat + neste_steg
-            
+                return completion.choices[0].message.content
             except Exception as e:
-                mcp_logger.error(f"Feil ved juridisk problemanalyse: {str(e)}")
-                raise e
+                logger.error(f"Feil ved analyse av juridisk spørsmål: {e}")
+                return f"Beklager, det oppstod en feil ved analysen av det juridiske spørsmålet: {e}"
         
         @self.mcp.tool()
         async def juridisk_rettsanvendelse(problem: str, fakta: str, rettskilder: str = "") -> str:
