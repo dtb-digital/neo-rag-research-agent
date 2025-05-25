@@ -579,7 +579,7 @@ Du bestemmer selv, basert på samtalekonteksten og analysen, hvilke verktøy som
                 1. Er problemstillingen klar og spesifikk nok?
                 2. Er faktum tilstrekkelig detaljert?
                 3. Er det oppgitt relevante rettskilder (lover, forskrifter, rettspraksis)?
-                4. Hvilke spesifikke lover og bestemmelser trengs for å vurdere problemstillingen?
+                4. Hvilke spesifikke lovers og bestemmelser trengs for å vurdere problemstillingen?
                 
                 VIKTIG: Du skal IKKE foreta en juridisk vurdering, men kun evaluere om informasjonen er tilstrekkelig.
                 Hvis informasjonen er utilstrekkelig, spesifiser NØYAKTIG hvilke lover, bestemmelser eller faktaopplysninger som mangler.
@@ -1075,6 +1075,306 @@ JURIDISK VURDERING FULLFØRT: Den juridiske analysen er nå ferdigstilt, basert 
             
             except Exception as e:
                 mcp_logger.error(f"Feil ved juridisk tankerekke: {str(e)}")
+                raise e
+        
+        @self.mcp.tool()
+        async def unntaksbestemmelser_analyse(rettsområde: str, hovedregel: str, faktiske_forhold: str, 
+                                            regelverk: str, søknadstype: str = "", spesielle_omstendigheter: str = "") -> str:
+            """
+            Identifiserer, vurderer og anvender unntaksbestemmelser i lover og forskrifter, uavhengig av rettsområde.
+            
+            BRUK DETTE når du trenger å:
+            - Identifisere om det finnes relevante unntaksbestemmelser i en lov eller forskrift
+            - Analysere vilkårene for når unntak kan anvendes
+            - Vurdere om faktiske forhold i en sak oppfyller vilkårene for unntak
+            - Undersøke hvordan unntaksbestemmelser har blitt tolket i rettspraksis
+            - Forstå dokumentasjons- og prosessuelle krav for å påberope seg unntak
+            
+            Args:
+                rettsområde: Spesifiser rettsområdet (f.eks. 'miljørett', 'skatterett', 'plan- og bygningsrett')
+                hovedregel: Hovedregelen som det potensielt kan gjøres unntak fra
+                faktiske_forhold: Relevante fakta som kan ha betydning for unntaksvurderingen
+                regelverk: Relevante lover og forskrifter (kan oppgis som liste eller kommaseparert tekst)
+                søknadstype: Type søknad eller vedtak saken gjelder (valgfritt)
+                spesielle_omstendigheter: Eventuelle særlige forhold som kan påvirke unntaksvurderingen (valgfritt)
+            
+            Returns:
+                En strukturert analyse av unntaksbestemmelser relevant for saken
+            """
+            mcp_logger.info(f"Utfører analyse av unntaksbestemmelser for {rettsområde}, hovedregel: {hovedregel}")
+            
+            try:
+                system_prompt = """
+                Du er en erfaren juridisk ekspert med særlig kompetanse på unntaksbestemmelser i norsk rett.
+                
+                Din oppgave er å identifisere, analysere og vurdere relevante unntaksbestemmelser knyttet til den aktuelle saken.
+                Unntaksbestemmelser er bestemmelser som gir adgang til å fravike en hovedregel under bestemte omstendigheter.
+                
+                Følg disse prinsippene i din analyse:
+                
+                1. IDENTIFIKASJON: Identifiser alle relevante unntaksbestemmelser i gjeldende regelverk.
+                   - Finn de spesifikke paragrafene og leddene som inneholder unntakshjemler
+                   - Identifiser både generelle og spesielle unntaksbestemmelser
+                   - Vurder også om det finnes relevante dispensasjonshjemler
+                
+                2. VILKÅR: For hver unntaksbestemmelse, klargjør hvilke vilkår som må være oppfylt.
+                   - Skille mellom kumulative vilkår (alle må være oppfylt) og alternative vilkår
+                   - Identifiser både objektive og skjønnsmessige vilkår
+                   - Vurder om det er snakk om "kan"-regler eller "skal"-regler
+                
+                3. TOLKNING: Analyser hvordan unntaksbestemmelsene har blitt tolket i rettspraksis.
+                   - Trekk inn relevante rettsavgjørelser, spesielt fra Høyesterett
+                   - Vurder hvordan forvaltningspraksis har anvendt bestemmelsene
+                   - Identifiser om det er en snever eller vid tolkning som gjelder
+                
+                4. SUBSUMSJON: Vurder om de faktiske forholdene i saken oppfyller vilkårene.
+                   - Gjør en konkret vurdering for hvert vilkår
+                   - Ved skjønnsmessige vilkår, drøft relevante momenter
+                   - Angi hvor sikker vurderingen er
+                
+                5. DOKUMENTASJONSKRAV: Identifiser hvilken dokumentasjon som kreves.
+                   - Hvilke beviskrav som gjelder for å påberope seg unntaket
+                   - Hvilken type dokumentasjon som normalt kreves
+                   - Om bevisbyrden er plassert hos søker eller forvaltningen
+                
+                6. PROSESSUELLE KRAV: Beskriv eventuelle prosessuelle skritt som må følges.
+                   - Om det er særlige søknadskrav
+                   - Om det er krav til forhåndsvarsling, høring eller andre prosesser
+                   - Om det er tidsbegrensninger eller frister
+                
+                7. RETTSPRAKSIS: Identifiser relevant rettspraksis som belyser tolkningen.
+                   - Relevante dommer som viser hvor grensene går
+                   - Hvordan domstolene har vektlagt ulike momenter
+                   - Om det finnes prejudikater som er særlig relevante
+                
+                8. KONKLUSJON: Gi en begrunnet vurdering av om unntaksbestemmelsene kommer til anvendelse.
+                   - Oppsummer hvilke unntaksbestemmelser som er relevante
+                   - Konkluder om vilkårene for unntak er oppfylt
+                   - Angi eventuelle forbehold eller usikkerhetsmomenter
+                
+                Besvarelsen skal være strukturert, presis og faglig solid, med konkrete henvisninger til relevante rettskilder.
+                """
+                
+                user_prompt = f"""
+                RETTSOMRÅDE: {rettsområde}
+                
+                HOVEDREGEL: {hovedregel}
+                
+                FAKTISKE FORHOLD: {faktiske_forhold}
+                
+                REGELVERK: {regelverk}
+                
+                {"SØKNADSTYPE: " + søknadstype if søknadstype else ""}
+                
+                {"SPESIELLE OMSTENDIGHETER: " + spesielle_omstendigheter if spesielle_omstendigheter else ""}
+                
+                Vennligst utfør en systematisk analyse av relevante unntaksbestemmelser for denne saken.
+                """
+                
+                # Kall OpenAI API
+                from openai import OpenAI
+                client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+                
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    temperature=0.2,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ]
+                )
+                
+                resultat = response.choices[0].message.content
+                
+                # Legg til instruksjoner til Claude om å oppdatere artifact/dokument
+                claude_instruksjoner = """
+
+## INSTRUKSJONER TIL CLAUDE
+
+1. Oppdater det eksisterende "Juridisk vurdering"-dokumentet med resultatene fra denne unntaksanalysen:
+   - Utvid "RETTSLIG GRUNNLAG" med de identifiserte unntaksbestemmelsene
+   - Integrer unntaksanalysen i "RETTSLIG VURDERING" som et eget avsnitt
+   - Oppdater "KONKLUSJON" for å reflektere om unntaksbestemmelser kommer til anvendelse
+   - Juster "SAMMENDRAG" for å inkludere hovedpunktene fra unntaksanalysen
+
+2. Sørg for helhetlig integrasjon i den juridiske vurderingen:
+   - Koble unntaksbestemmelsene til tidligere identifiserte rettsgrunnlag
+   - Knytt unntaksvurderingen til tidligere identifiserte faktiske forhold
+   - Balanser vurderingen av hovedregel og unntak på en juridisk forsvarlig måte
+
+3. TILGJENGELIGE JURIDISKE VERKTØY:
+   Du har følgende juridiske verktøy tilgjengelig for å fortsette analysen:
+   
+   - søk_i_lovdata(sporsmal, antall_resultater): Søk etter flere rettskilder om unntaksbestemmelsene.
+   - hent_lovtekst(lov_navn, lov_id, kapittel_nr, paragraf_nr): Hent spesifikke lovtekster for unntaksbestemmelsene.
+   - forvaltningsskjonn_analyse(rettsområde, rettslig_grunnlag, skjønnstema, faktiske_forhold, relevante_hensyn, tidligere_praksis, berørte_interesser): Bruk dette hvis unntaksbestemmelsene inneholder skjønnsmessige elementer.
+   - juridisk_rettsanvendelse(problem, fakta, rettskilder): Anvend både hovedregler og unntaksbestemmelser på fakta.
+   - djevelens_advokat(problem, vurdering): Test robustheten i vurderingen av unntaksbestemmelsenes anvendelse.
+   - juridisk_tankerekke(problem, vurdering, motargumenter): Kom frem til en endelig konklusjon om unntaksbestemmelsene.
+
+   Anbefal eksplisitt hvilket verktøy som er mest hensiktsmessig å bruke i neste steg.
+
+Basert på din egen vurdering av saken, anbefal det neste steget som gir mest verdi for brukeren.
+"""
+                
+                return resultat + claude_instruksjoner
+            
+            except Exception as e:
+                mcp_logger.error(f"Feil ved analyse av unntaksbestemmelser: {str(e)}")
+                raise e
+        
+        @self.mcp.tool()
+        async def forvaltningsskjonn_analyse(rettsområde: str, rettslig_grunnlag: str, skjønnstema: str, 
+                                           faktiske_forhold: str, relevante_hensyn: str = "", tidligere_praksis: str = "", 
+                                           berørte_interesser: str = "") -> str:
+            """
+            Identifiserer, analyserer og strukturerer skjønnsutøvelse i forvaltningssaker på tvers av rettsområder.
+            
+            BRUK DETTE når du trenger å:
+            - Identifisere hvor stort skjønnsrom forvaltningen har i en bestemt sak
+            - Kartlegge hvilke hensyn som lovlig kan eller skal vektlegges
+            - Analysere hvordan ulike hensyn bør vektes mot hverandre
+            - Vurdere om skjønnsutøvelsen er innenfor rettslige rammer
+            - Sammenligne med tidligere forvaltningspraksis i lignende saker
+            - Vurdere forholdsmessigheten i potensielle vedtak
+            
+            Args:
+                rettsområde: Spesifiser rettsområdet (f.eks. 'miljørett', 'utlendingsrett', 'trygderett')
+                rettslig_grunnlag: Bestemmelsen(e) som gir rom for skjønn
+                skjønnstema: Hvilket aspekt av saken skjønnet gjelder (f.eks. 'tidsfrist', 'vilkårsfastsettelse')
+                faktiske_forhold: Relevante fakta for skjønnsutøvelsen
+                relevante_hensyn: Hensyn som kan eller skal vektlegges i skjønnsutøvelsen (valgfritt)
+                tidligere_praksis: Beskrivelse av lignende saker og hvordan skjønnet har vært utøvd (valgfritt)
+                berørte_interesser: Hvilke interesser som berøres av vedtaket (valgfritt)
+            
+            Returns:
+                En strukturert analyse av forvaltningens skjønnsutøvelse i den aktuelle saken
+            """
+            mcp_logger.info(f"Utfører analyse av forvaltningsskjønn for {rettsområde}, skjønnstema: {skjønnstema}")
+            
+            try:
+                system_prompt = """
+                Du er en erfaren jurist med særlig kompetanse på forvaltningsrett og forvaltningsskjønn.
+                
+                Din oppgave er å identifisere, analysere og strukturere skjønnsutøvelsen i en forvaltningssak.
+                Forvaltningsskjønn handler om når forvaltningen har rom for å utøve vurderinger innenfor rettslige rammer.
+                
+                Følg disse prinsippene i din analyse:
+                
+                1. IDENTIFISERING AV SKJØNNSROM: Identifiser hvilke aspekter av saken som er underlagt forvaltningsskjønn.
+                   - Analyser hjemmelsgrunnlaget og identifiser hvilke elementer som gir rom for skjønn
+                   - Skille mellom rettsanvendelsesskjønn og forvaltningsskjønn ("fritt skjønn")
+                   - Vurder hvor stort handlingsrom forvaltningen har
+                
+                2. RETTSLIGE RAMMER: Klargjør de rettslige rammene for skjønnsutøvelsen.
+                   - Identifiser lovfestede begrensninger for skjønnet
+                   - Kartlegg ulovfestede begrensninger (myndighetsmisbrukslæren)
+                   - Vurder betydningen av usaklig forskjellsbehandling, utenforliggende hensyn, vilkårlighet, og grov urimelighet
+                
+                3. RELEVANTE HENSYN: Identifiser hvilke hensyn som kan og skal vektlegges.
+                   - Lovpålagte hensyn som må vektlegges
+                   - Hensyn som er relevante basert på formålsbestemmelser og forarbeider
+                   - Hensyn som kan utledes av forvaltningspraksis
+                   - Saksspesifikke hensyn
+                   - Hensyn som vil være utenforliggende eller ulovlige å vektlegge
+                
+                4. VEKTING AV HENSYN: Analyser hvordan ulike hensyn bør vektes.
+                   - Vurder hvordan hensynene normalt vektes innenfor rettsområdet
+                   - Identifiser hvilke hensyn som typisk tillegges størst vekt
+                   - Analyser om det er særlige forhold i saken som påvirker vektingen
+                
+                5. FORVALTNINGSPRAKSIS: Kartlegg relevant forvaltningspraksis.
+                   - Identifiser lignende saker og hvordan skjønnet har vært utøvd der
+                   - Vurder betydningen av likebehandlingsprinsippet
+                   - Analyser om det er relevant praksis fra overordnede forvaltningsorganer
+                
+                6. FORHOLDSMESSIGHETSVURDERING: Analyser om potensielle utfall er forholdsmessige.
+                   - Vurder om tiltaket er egnet til å oppnå formålet
+                   - Analyser om tiltaket er nødvendig eller om mindre inngripende alternativer finnes
+                   - Drøft om tiltaket er forholdsmessig i snever forstand (proporsjonalt)
+                
+                7. ANBEFALTE LØSNINGER: Foreslå hvordan skjønnet bør utøves.
+                   - Skisser ulike alternativer innenfor skjønnsrommet
+                   - Vurder styrker og svakheter ved de ulike alternativene
+                   - Anbefal en løsning som balanserer relevante hensyn
+                
+                8. VILKÅR OG AVBØTENDE TILTAK: Vurder om det bør stilles vilkår.
+                   - Identifiser hjemmel for å stille vilkår
+                   - Foreslå vilkår som kan avbøte negative konsekvenser
+                   - Vurder forholdsmessigheten av foreslåtte vilkår
+                
+                Besvarelsen skal være strukturert, presis og faglig solid, med konkrete henvisninger til relevante rettskilder.
+                """
+                
+                user_prompt = f"""
+                RETTSOMRÅDE: {rettsområde}
+                
+                RETTSLIG GRUNNLAG: {rettslig_grunnlag}
+                
+                SKJØNNSTEMA: {skjønnstema}
+                
+                FAKTISKE FORHOLD: {faktiske_forhold}
+                
+                {"RELEVANTE HENSYN: " + relevante_hensyn if relevante_hensyn else ""}
+                
+                {"TIDLIGERE PRAKSIS: " + tidligere_praksis if tidligere_praksis else ""}
+                
+                {"BERØRTE INTERESSER: " + berørte_interesser if berørte_interesser else ""}
+                
+                Vennligst utfør en systematisk analyse av forvaltningsskjønnet i denne saken.
+                """
+                
+                # Kall OpenAI API
+                from openai import OpenAI
+                client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+                
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    temperature=0.2,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ]
+                )
+                
+                resultat = response.choices[0].message.content
+                
+                # Legg til instruksjoner til Claude om å oppdatere artifact/dokument
+                claude_instruksjoner = """
+
+## INSTRUKSJONER TIL CLAUDE
+
+1. Oppdater det eksisterende "Juridisk vurdering"-dokumentet med resultatene fra denne skjønnsanalysen:
+   - Utvid "RETTSLIG GRUNNLAG" med presiseringer om skjønnsrommet
+   - Integrer skjønnsanalysen i "RETTSLIG VURDERING" i et eget avsnitt
+   - Oppdater "KONKLUSJON" for å reflektere hvordan skjønnet bør utøves
+   - Utvid "ANBEFALINGER" med forslag til vilkår og avbøtende tiltak
+   - Juster "SAMMENDRAG" for å inkludere hovedpunktene fra skjønnsanalysen
+
+2. Sørg for helhetlig integrasjon i den juridiske vurderingen:
+   - Knytt skjønnsanalysen til tidligere identifiserte rettsgrunnlag
+   - Sikre sammenheng mellom skjønnsanalysen og eventuelle unntaksbestemmelser
+   - Balanser de ulike hensynene på en juridisk forsvarlig måte
+
+3. TILGJENGELIGE JURIDISKE VERKTØY:
+   Du har følgende juridiske verktøy tilgjengelig for å fortsette analysen:
+   
+   - søk_i_lovdata(sporsmal, antall_resultater): Søk etter flere rettskilder om forvaltningsskjønn.
+   - hent_lovtekst(lov_navn, lov_id, kapittel_nr, paragraf_nr): Hent spesifikke lovtekster som berører skjønnsutøvelsen.
+   - unntaksbestemmelser_analyse(rettsområde, hovedregel, faktiske_forhold, regelverk, søknadstype, spesielle_omstendigheter): Bruk dette hvis skjønnsutøvelsen berører mulige unntak fra hovedregler.
+   - juridisk_rettsanvendelse(problem, fakta, rettskilder): Anvend rettsregler og skjønnsmessige vurderinger på fakta.
+   - djevelens_advokat(problem, vurdering): Test robustheten i skjønnsvurderingen.
+   - juridisk_tankerekke(problem, vurdering, motargumenter): Kom frem til en endelig konklusjon om skjønnsutøvelsen.
+
+   Anbefal eksplisitt hvilket verktøy som er mest hensiktsmessig å bruke i neste steg, og begrunn din anbefaling.
+
+Basert på din egen vurdering av saken, anbefal det neste steget som gir mest verdi for brukeren.
+"""
+                
+                return resultat + claude_instruksjoner
+            
+            except Exception as e:
+                mcp_logger.error(f"Feil ved analyse av forvaltningsskjønn: {str(e)}")
                 raise e
     
     def run(self):
