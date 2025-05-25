@@ -472,7 +472,80 @@ class LovdataMCPServer:
                     ],
                     temperature=0.1
                 )
-                return completion.choices[0].message.content
+                resultat = completion.choices[0].message.content
+                
+                # Legg til instruksjoner til Claude om å oppdatere artifact/dokument
+                claude_instruksjoner = """
+
+## INSTRUKSJONER TIL CLAUDE
+
+1. Opprett et artifact/dokument med tittelen "Juridisk vurdering" hvis det ikke allerede eksisterer, med følgende struktur:
+
+```
+1. SAMMENDRAG
+   - Kort oppsummering av sak og konklusjon (oppdateres løpende)
+
+2. FAKTUM
+   - Sakens bakgrunn og relevante faktiske forhold
+
+3. PROBLEMSTILLING
+   - Presisering av de rettslige spørsmålene
+
+4. RETTSLIG GRUNNLAG
+   - Aktuelle lover og forskrifter (med direkte sitater)
+   - Relevant rettspraksis
+   - Andre rettskilder (forarbeider, juridisk teori)
+
+5. RETTSLIG VURDERING
+   - Subsumpsjon med argumenter og motargumenter integrert
+   - Vurdering av ulike tolkningsalternativer
+   - Avveining av motstridende hensyn
+
+6. KONKLUSJON
+   - Klar og presis konklusjon på problemstillingen
+   - Grad av sikkerhet og eventuelle forbehold
+
+7. ANBEFALINGER
+   - Praktiske konsekvenser og handlingsalternativer
+```
+
+2. Basert på den juridiske analysen ovenfor:
+   - Fyll inn "PROBLEMSTILLING" med de identifiserte juridiske spørsmålene
+   - Påbegynn "RETTSLIG GRUNNLAG" med de identifiserte relevante lovene og forskriftene
+   - Fyll inn "FAKTUM" med de fakta du har tilgjengelig så langt
+
+3. Vurder om du trenger ytterligere informasjon:
+   - Spesifikke lovtekster og forskrifter som bør innhentes
+   - Ytterligere faktiske opplysninger som trengs for vurderingen
+   - Relevant rettspraksis som bør undersøkes
+
+4. Kildematerialeanalyse:
+   - Gjennomgå ALLE tidligere søkeresultater og lovtekster fra samtalehistorikken
+   - Identifiser spesifikt relevante lover, forskrifter og rettskilder som har blitt hentet tidligere
+   - Inkluder relevante utdrag fra disse kildene i "RETTSLIG GRUNNLAG"
+   - Påpek eksplisitt om det mangler viktige rettskilder for å fullføre analysen
+   - Foreslå konkrete lover eller forskrifter som bør innhentes hvis noe mangler
+
+5. Foreslå for brukeren neste skritt basert på din vurdering:
+   - Søke etter flere relevante rettskilder med søk_i_lovdata
+   - Hente spesifikke lovtekster med hent_lovtekst
+   - Gå videre til juridisk rettsanvendelse hvis tilstrekkelig informasjon er tilgjengelig
+
+6. TILGJENGELIGE JURIDISKE VERKTØY:
+   Du har følgende juridiske verktøy tilgjengelig for å fortsette eller utbedre analysen:
+   
+   - søk_i_lovdata(sporsmal, antall_resultater): Søk etter relevante lovtekster og juridiske dokumenter.
+   - hent_lovtekst(lov_navn, lov_id, kapittel_nr, paragraf_nr): Hent spesifikke lovtekster eller forskrifter.
+   - juridisk_rettsanvendelse(problem, fakta, rettskilder): Anvend rettsregler på fakta og gi en begrunnet vurdering.
+   - djevelens_advokat(problem, vurdering): Utfordrer en juridisk vurdering med alternative tolkninger.
+   - juridisk_tankerekke(problem, vurdering, motargumenter): Gir en endelig juridisk konklusjon basert på argumenter og motargumenter.
+
+   Anbefal eksplisitt hvilket verktøy som er mest hensiktsmessig å bruke i neste steg, og hvorfor.
+
+Du bestemmer selv, basert på samtalekonteksten og analysen, hvilke verktøy som er mest relevante å bruke videre.
+"""
+                
+                return resultat + claude_instruksjoner
             except Exception as e:
                 logger.error(f"Feil ved analyse av juridisk spørsmål: {e}")
                 return f"Beklager, det oppstod en feil ved analysen av det juridiske spørsmålet: {e}"
@@ -658,15 +731,54 @@ class LovdataMCPServer:
                 
                 resultat = response.choices[0].message.content
                 
-                # Legg til veiledning om neste steg
-                neste_steg = """
+                # Legg til instruksjoner til Claude om å oppdatere artifact/dokument
+                claude_instruksjoner = """
+
+## INSTRUKSJONER TIL CLAUDE
+
+1. Oppdater det eksisterende "Juridisk vurdering"-dokumentet med resultatene fra denne rettsanvendelsen:
+   - Utvid "RETTSLIG GRUNNLAG" med flere spesifikke lovbestemmelser og rettspraksis
+   - Fyll ut "RETTSLIG VURDERING" med subsumpsjon, argumenter og tolkninger
+   - Begynn å utforme "KONKLUSJON" basert på rettsanvendelsen
+   - Oppdater "SAMMENDRAG" med hovedpunkter fra rettsanvendelsen
+
+2. Vurder rettsanvendelsen kritisk ved å:
+   - Identifisere potensielle svakheter i argumentasjonen
+   - Vurdere alternative tolkninger av rettsreglene
+   - Vurdere motargumenter mot hovedkonklusjonen
+   - Integrere disse vurderingene direkte i "RETTSLIG VURDERING" (ikke som et separat "djevelens advokat" kapittel)
+
+3. Grundig kildematerialeanalyse:
+   - Sjekk nøye ALLE tidligere søkeresultater og lovtekster fra samtalehistorikken
+   - Verifiser at rettsanvendelsen har tatt hensyn til alle relevante rettskilder fra tidligere
+   - Kontroller om det er motstrid mellom rettsanvendelsen og innholdet i kildene
+   - Suppler med viktige utdrag fra kildematerialet som ikke er reflektert i rettsanvendelsen
+   - Påpek eksplisitt om det mangler viktige rettskilder for å fullføre analysen
+
+4. Vurder basert på rettsanvendelsen og samtalekonteksten:
+   - Om rettsgrunnlaget er tilstrekkelig belyst
+   - Om subsumpsjonen er grundig og nyansert nok
+   - Om det er behov for ytterligere rettskilder eller faktaopplysninger
+
+5. Foreslå for brukeren neste steg basert på din faglige vurdering:
+   - Innhenting av ytterligere rettskilder for å styrke analysen
+   - Videreutvikling av resonnementet gjennom juridisk tankerekke
+   - Ferdigstillelse av analysen hvis vurderingen er tilstrekkelig grundig
+
+6. TILGJENGELIGE JURIDISKE VERKTØY:
+   Du har følgende juridiske verktøy tilgjengelig for å fortsette eller utbedre analysen:
+   
+   - søk_i_lovdata(sporsmal, antall_resultater): Søk etter relevante lovtekster og juridiske dokumenter.
+   - hent_lovtekst(lov_navn, lov_id, kapittel_nr, paragraf_nr): Hent spesifikke lovtekster eller forskrifter.
+   - djevelens_advokat(problem, vurdering): Utfordrer en juridisk vurdering med alternative tolkninger. Bruk dette for å kritisk teste styrken i argumentasjonen.
+   - juridisk_tankerekke(problem, vurdering, motargumenter): Dette er det naturlige neste steget etter djevelens_advokat, for å komme frem til en endelig konklusjon som balanserer argumenter og motargumenter.
+
+   Anbefal eksplisitt hvilket verktøy som bør brukes i neste steg basert på kvaliteten og grundigheten i den nåværende analysen.
+
+Basert på din egen vurdering av kvaliteten og grundigheten i analysen, anbefal det neste steget som gir mest verdi for brukeren.
+"""
                 
-                NESTE STEG: For å teste robustheten i denne vurderingen, bruk djevelens_advokat med:
-                - problem: den samme problemstillingen som over
-                - vurdering: hele denne rettsanvendelsen
-                """
-                
-                return resultat + neste_steg
+                return resultat + claude_instruksjoner
             
             except Exception as e:
                 mcp_logger.error(f"Feil ved juridisk rettsanvendelse: {str(e)}")
@@ -761,16 +873,56 @@ class LovdataMCPServer:
                 
                 resultat = response.choices[0].message.content
                 
-                # Legg til veiledning om neste steg
-                neste_steg = """
+                # Legg til instruksjoner til Claude om å oppdatere artifact/dokument
+                claude_instruksjoner = """
+
+## INSTRUKSJONER TIL CLAUDE
+
+1. Oppdater det eksisterende "Juridisk vurdering"-dokumentet med disse alternative perspektivene og motargumentene:
+   - Integrer motargumentene direkte i "RETTSLIG VURDERING" i form av avveininger og motbetraktninger
+   - Nyansér "KONKLUSJON" ved å ta hensyn til alternative perspektiver
+   - Utvid "RETTSLIG GRUNNLAG" med eventuelle motstridende rettskilder som er identifisert
+   - Justér "SAMMENDRAG" for å reflektere den mer nyanserte analysen
+
+2. Grundig kildematerialeverifisering:
+   - Gå systematisk gjennom ALLE tidligere søkeresultater og lovtekster fra samtalehistorikken
+   - Verifiser spesifikt om den juridiske vurderingen har:
+     * Oversett relevante lover, forskrifter eller paragrafer fra kildematerialet
+     * Misforstått eller feiltolket innholdet i rettskilder
+     * Ignorert relevante unntak eller spesialbestemmelser
+     * Ignorert motstridende rettskilder eller tolkninger
+   - Inkluder direkte sitater fra kildematerialet som motbevis der det er relevant
+   - Legg særlig vekt på å identifisere nyanser i lovtekster som kan påvirke konklusjonen
+
+3. Sørg for at dokumentet presenterer en balansert juridisk analyse ved å:
+   - Omformulere motargumentene til profesjonelle juridiske avveininger
+   - Unngå kunstig motsetning mellom "for" og "mot" argumenter
+   - Integrere kritiske perspektiver som en naturlig del av en grundig juridisk analyse
+   - Sikre at alle relevante rettslige hensyn er belyst
+
+4. Vurder basert på den utvidede analysen:
+   - Om det er behov for ytterligere presisering av noen rettslige spørsmål
+   - Om det er uavklarte juridiske problemstillinger som krever mer oppmerksomhet
+   - Om det er spesifikke rettskilder som bør undersøkes nærmere
+
+5. Foreslå for brukeren neste steg basert på din faglige vurdering:
+   - Ytterligere undersøkelse av spesifikke rettskilder
+   - Systematisk juridisk tankerekke for å komme til en endelig konklusjon
+   - Ferdigstillelse av analysen hvis alle relevante perspektiver er belyst
+
+6. TILGJENGELIGE JURIDISKE VERKTØY:
+   Dette er normalt det siste steget i den juridiske analysen, men du har fortsatt følgende verktøy tilgjengelig hvis det skulle være behov for ytterligere informasjon eller analyse:
+   
+   - søk_i_lovdata(sporsmal, antall_resultater): Bruk dette kun hvis analysen avdekker behov for ytterligere rettskilder som ikke er hentet tidligere.
+   - hent_lovtekst(lov_navn, lov_id, kapittel_nr, paragraf_nr): Bruk dette hvis du oppdager at spesifikke lovtekster mangler i analysen.
+   - analyser_juridisk_sporsmal(sporsmal, kontekst): Bruk dette kun hvis du identifiserer et helt nytt juridisk spørsmål som krever en separat analyse.
+
+   Vurder om den juridiske analysen nå er komplett, eller om det er spesifikke områder som krever ytterligere undersøkelse før en endelig konklusjon kan gis.
+
+JURIDISK VURDERING FULLFØRT: Den juridiske analysen er nå ferdigstilt, basert på grundig juridisk metode, avveining av relevante rettskilder og profesjonell rettsanvendelse.
+"""
                 
-                NESTE STEG: For å utarbeide en endelig balansert konklusjon, bruk juridisk_tankerekke med:
-                - problem: den samme problemstillingen som over
-                - vurdering: den opprinnelige rettsanvendelsen
-                - motargumenter: motargumentene identifisert her
-                """
-                
-                return resultat + neste_steg
+                return resultat + claude_instruksjoner
             
             except Exception as e:
                 mcp_logger.error(f"Feil ved djevelens advokat analyse: {str(e)}")
@@ -872,14 +1024,54 @@ class LovdataMCPServer:
                 
                 resultat = response.choices[0].message.content
                 
-                # Legg til avsluttende kommentar
-                avslutning = """
+                # Legg til avsluttende kommentar og instruksjoner til Claude
+                claude_instruksjoner = """
+
+## INSTRUKSJONER TIL CLAUDE
+
+1. Ferdigstill "Juridisk vurdering"-dokumentet med den endelige juridiske analysen:
+   - Fullfør "RETTSLIG VURDERING" med balanserte argumenter, motargumenter og avveininger
+   - Skriv en klar og tydelig "KONKLUSJON" med grad av sikkerhet og eventuelle forbehold
+   - Utarbeid "ANBEFALINGER" med praktiske konsekvenser og handlingsalternativer
+   - Ferdigstill "SAMMENDRAG" som gir et presist overblikk over hele saken
+
+2. Endelig kvalitetssikring av kildemateriale:
+   - Gjennomgå en siste gang ALLE relevante lovtekster og rettskilder fra samtalehistorikken
+   - Verifiser at den endelige vurderingen reflekterer alle relevante aspekter av kildematerialet
+   - Kontroller at konklusjonen ikke motsies av noen oversette elementer i kildematerialet
+   - Sikre at alle rettskilder er korrekt sitert og forstått i sin rette kontekst
+   - Juster vurderingen hvis du oppdager viktige nyanser som ikke er tilstrekkelig belyst
+
+3. Sørg for at dokumentet er strukturert som en profesjonell juridisk betenkning ved å:
+   - Sikre en logisk flyt mellom alle delene av dokumentet
+   - Bruke korrekt juridisk terminologi og formuleringer
+   - Gjøre presise henvisninger til aktuelle rettskilder
+   - Balansere akademisk grundighet med praktisk anvendbarhet
+
+4. Gjennomgå og forbedre dokumentet ved å:
+   - Sikre at alle relevante fakta er korrekt fremstilt
+   - Verifisere at alle lovhenvisninger og rettskilder er presist angitt
+   - Kontrollere at konklusjonen følger logisk av rettslige premisser
+   - Justere formuleringer som kan fremstå som ensidige eller mangelfulle
+
+5. Presenter det ferdigstilte dokumentet til brukeren og spør om:
+   - Det er behov for ytterligere klargjøring av spesifikke punkter
+   - Brukeren ønsker mer dybde på bestemte juridiske aspekter
+   - Det er oppfølgende juridiske spørsmål som bør adresseres
+
+6. TILGJENGELIGE JURIDISKE VERKTØY:
+   Dette er normalt det siste steget i den juridiske analysen, men du har fortsatt følgende verktøy tilgjengelig hvis det skulle være behov for ytterligere informasjon eller analyse:
+   
+   - søk_i_lovdata(sporsmal, antall_resultater): Bruk dette kun hvis analysen avdekker behov for ytterligere rettskilder som ikke er hentet tidligere.
+   - hent_lovtekst(lov_navn, lov_id, kapittel_nr, paragraf_nr): Bruk dette hvis du oppdager at spesifikke lovtekster mangler i analysen.
+   - analyser_juridisk_sporsmal(sporsmal, kontekst): Bruk dette kun hvis du identifiserer et helt nytt juridisk spørsmål som krever en separat analyse.
+
+   Vurder om den juridiske analysen nå er komplett, eller om det er spesifikke områder som krever ytterligere undersøkelse før en endelig konklusjon kan gis.
+
+JURIDISK VURDERING FULLFØRT: Den juridiske analysen er nå ferdigstilt, basert på grundig juridisk metode, avveining av relevante rettskilder og profesjonell rettsanvendelse.
+"""
                 
-                JURIDISK VURDERING FULLFØRT: Dette er den endelige juridiske vurderingen basert på 
-                metodisk analyse, kritisk evaluering og transparent tankerekke.
-                """
-                
-                return resultat + avslutning
+                return resultat + claude_instruksjoner
             
             except Exception as e:
                 mcp_logger.error(f"Feil ved juridisk tankerekke: {str(e)}")
