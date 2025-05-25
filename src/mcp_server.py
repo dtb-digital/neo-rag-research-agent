@@ -462,7 +462,7 @@ class LovdataMCPServer:
             """
             
             from openai import AsyncOpenAI
-            client = AsyncOpenAI(api_key=self.openai_api_key)
+            client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
             try:
                 completion = await client.chat.completions.create(
                     model="gpt-4-turbo",
