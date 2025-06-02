@@ -9,6 +9,7 @@ Dette modulet inneholder fire selvstendige tools for juridisk informasjonssøk:
 Hver tool er komplett selvstendige uten kryss-referanser.
 """
 
+import asyncio
 import os
 from typing import List, Optional
 
@@ -17,6 +18,8 @@ from langchain_core.tools import tool
 from langchain_openai import OpenAIEmbeddings
 from openai import AsyncOpenAI
 from pinecone import Pinecone
+
+from src.config import PINECONE_INDEX_NAME
 
 
 @tool
@@ -30,20 +33,21 @@ async def sok_lovdata(query: str, k: int = 5) -> List[Document]:
     Returns:
         Liste med relevante dokumenter med metadata
     """
-    # Pinecone-oppsett (inspirert av MCP-server)
-    pinecone_client = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-    index = pinecone_client.Index("lovdata-embedding-index")
-    
-    # Embed query (samme pattern som MCP-server)
+    # Embed query asynkront
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
     query_vector = await embeddings.aembed_query(query)
     
-    # Search Pinecone (kopierer søkelogikk)
-    search_results = index.query(
-        vector=query_vector,
-        top_k=k,
-        include_metadata=True
-    )
+    # Pinecone søk asynkront ved bruk av asyncio.to_thread
+    def _sync_pinecone_search():
+        pinecone_client = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+        index = pinecone_client.Index(PINECONE_INDEX_NAME)
+        return index.query(
+            vector=query_vector,
+            top_k=k,
+            include_metadata=True
+        )
+    
+    search_results = await asyncio.to_thread(_sync_pinecone_search)
     
     # Format til Document objekter (samme metadata-struktur)
     documents = []
@@ -116,24 +120,25 @@ async def hent_lovtekst(lov_id: str, paragraf_nr: Optional[str] = None, kapittel
     Returns:
         Liste med lovtekst-dokumenter med full metadata
     """
-    # Samme Pinecone-oppsett som sok_lovdata
-    pinecone_client = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-    index = pinecone_client.Index("lovdata-embedding-index")
-    
-    # Bygger filter (kopierer fra MCP-server hent_lovtekst())
+    # Bygger filter
     filter_dict = {"lov_id": {"$eq": lov_id}}
     if paragraf_nr:
         filter_dict["paragraf_nr"] = {"$eq": paragraf_nr}
     if kapittel_nr:
         filter_dict["kapittel_nr"] = {"$eq": kapittel_nr}
     
-    # Søk med metadata-filter
-    search_results = index.query(
-        vector=[0] * 1536,  # Dummy vector for metadata-only søk
-        top_k=50,           # Høyere k for komplette lovtekster
-        filter=filter_dict,
-        include_metadata=True
-    )
+    # Pinecone søk asynkront
+    def _sync_pinecone_filter_search():
+        pinecone_client = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+        index = pinecone_client.Index(PINECONE_INDEX_NAME)
+        return index.query(
+            vector=[0] * 1536,  # Dummy vector for metadata-only søk
+            top_k=50,           # Høyere k for komplette lovtekster
+            filter=filter_dict,
+            include_metadata=True
+        )
+    
+    search_results = await asyncio.to_thread(_sync_pinecone_filter_search)
     
     # Samme dokumentformatering som sok_lovdata
     documents = []
