@@ -56,7 +56,7 @@ async def lovdata_agent(state: AgentState, *, config: RunnableConfig) -> dict[st
 1. **sok_lovdata(query, k=10)** - Grunnleggende vektorsøk i Lovdata
 2. **generer_sokestrenger(question, num_queries=3)** - Lag flere søkestrenger for komplekse spørsmål
 3. **hent_lovtekst(lov_id, paragraf_nr, kapittel_nr)** - Hent spesifikke lovtekster
-4. **sammenstill_svar(documents, original_question)** - Sammenstill endelig svar (ALLTID siste steg)
+4. **sammenstill_svar(original_question)** - Sammenstill endelig svar basert på dokumenter i state (ALLTID siste steg)
 
 **ARBEIDSFLYT - FØLG DENNE REKKEFØLGEN:**
 
@@ -71,19 +71,19 @@ Etter første søk, vurder:
 - Er spørsmålet komplekst og trenger flere perspektiver?
 
 **STEG 3A: Hvis enkel/tilstrekkelig informasjon**
-→ Gå direkte til sammenstill_svar()
+→ Gå direkte til sammenstill_svar(original_question)
 
 **STEG 3B: Hvis kompleks/utilstrekkelig informasjon** 
 → Bruk generer_sokestrenger() for å lage 2-3 nye søkestrenger
 → Kall sok_lovdata() for hver nye søkestreng
-→ Gå til sammenstill_svar()
+→ Gå til sammenstill_svar(original_question)
 
 **STEG 3C: Hvis spesifikke lover er identifisert**
 → Bruk hent_lovtekst() med lov_id fra metadata
-→ Gå til sammenstill_svar()
+→ Gå til sammenstill_svar(original_question)
 
 **KRITISK: STOPP-KRITERIER**
-Kall sammenstill_svar() når:
+Kall sammenstill_svar(original_question) når:
 - Du har minst 5-10 relevante dokumenter
 - Du har dekket hovedaspektene av spørsmålet  
 - Du har gjort 2-3 søkerunder ELLER
@@ -93,7 +93,7 @@ Kall sammenstill_svar() når:
 
 **Nåværende status:** {len(state.documents)} dokumenter i state
 
-**DAGENS OPPGAVE:** Hvis dokumenter >= 5, vurder sterkt å kalle sammenstill_svar() i stedet for flere søk."""
+**DAGENS OPPGAVE:** Hvis dokumenter >= 5, vurder sterkt å kalle sammenstill_svar(original_question) i stedet for flere søk."""
 
     messages = [{"role": "system", "content": system_prompt}] + state.messages
     response = await model.ainvoke(messages)

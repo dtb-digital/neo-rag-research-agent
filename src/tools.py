@@ -7,7 +7,7 @@ Dette modulet inneholder fire selvstendige tools for juridisk informasjonssøk:
 4. sammenstill_svar - Sammenstilling av juridisk svar
 
 Bruker native LangGraph state management med Command objekter for automatisk
-state-oppdatering via reduce_docs reducer.
+state-oppdatering via reduce_docs reducer. Støtter både OpenAI og Anthropic modeller.
 """
 
 import asyncio
@@ -16,13 +16,16 @@ from typing import Annotated, List, Optional
 
 from langchain_core.documents import Document
 from langchain_core.messages import ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import InjectedToolCallId, tool
 from langchain_openai import OpenAIEmbeddings
 from langgraph.types import Command
-from openai import AsyncOpenAI
+from langgraph.prebuilt.tool_node import InjectedState
 from pinecone import Pinecone
 
-from src.config import PINECONE_INDEX_NAME
+from src.config import AgentConfiguration, PINECONE_INDEX_NAME
+from src.utils import load_chat_model
+from src.state import AgentState
 
 
 @tool
@@ -102,24 +105,29 @@ async def sok_lovdata(
 
 
 @tool
-async def generer_sokestrenger(question: str, num_queries: int = 3) -> List[str]:
-    """Generer flere søkestrenger fra ett spørsmål. Komplett implementasjon.
+async def generer_sokestrenger(
+    question: str, 
+    num_queries: int = 3,
+    config: RunnableConfig = None
+) -> List[str]:
+    """Generer flere søkestrenger fra ett spørsmål. Støtter konfigurerte modeller.
     
     Args:
         question: Brukerens opprinnelige spørsmål
         num_queries: Ønsket antall søkestrenger
+        config: RunnableConfig med modellkonfigurasjon
         
     Returns:
         Liste med genererte, varierte søkestrenger
     """
-    client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    # Hent konfigurasjon
+    agent_config = AgentConfiguration.from_runnable_config(config) if config else AgentConfiguration()
+    model = load_chat_model(agent_config.query_model)
     
-    response = await client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {
-                "role": "system", 
-                "content": """Du genererer varierte søkestrenger for juridisk informasjon i norsk lovdata.
+    response = await model.ainvoke([
+        {
+            "role": "system", 
+            "content": """Du genererer varierte søkestrenger for juridisk informasjon i norsk lovdata.
                 
 Opprett søkestrenger som:
 - Dekker forskjellige aspekter av spørsmålet
@@ -128,16 +136,15 @@ Opprett søkestrenger som:
 - Unngår for brede søkeord
 
 Skriv hver søkestreng på egen linje, kun søkestrengene uten nummerering eller punkter."""
-            },
-            {
-                "role": "user", 
-                "content": f"Lag {num_queries} forskjellige søkestrenger for: {question}"
-            }
-        ]
-    )
+        },
+        {
+            "role": "user", 
+            "content": f"Lag {num_queries} forskjellige søkestrenger for: {question}"
+        }
+    ])
     
     # Parse respons til liste med strenger
-    content = response.choices[0].message.content
+    content = response.content
     queries = [q.strip('- ').strip() for q in content.split('\n') if q.strip()]
     return queries[:num_queries]  # Sørg for riktig antall
 
@@ -215,19 +222,38 @@ async def hent_lovtekst(
 
 
 @tool
-async def sammenstill_svar(documents: List[Document], original_question: str) -> str:
-    """Sammenstill juridisk svar basert på dokumenter. Komplett implementasjon.
+async def sammenstill_svar(
+    original_question: str,
+    state: Annotated[AgentState, InjectedState],
+    config: RunnableConfig = None
+) -> str:
+    """Sammenstill juridisk svar basert på dokumenter i agent state. Støtter konfigurerte modeller.
+    
+    VIKTIG: Denne tool-en bruker dokumenter som allerede er samlet i agent state
+    gjennom sok_lovdata og hent_lovtekst operasjoner.
     
     Args:
-        documents: Alle relevante dokumenter fra søk
         original_question: Brukerens opprinnelige spørsmål
+        state: Agent state som inneholder dokumenter
+        config: RunnableConfig med modellkonfigurasjon
         
     Returns:
         Ferdig formulert juridisk svar med kildehenvisninger
     """
-    client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    # Sjekk om vi har dokumenter i state
+    documents = state.documents if state.documents else []
     
-    # Format dokumenter for prompt (inspirert av MCP respond())
+    if not documents:
+        return """Ingen dokumenter er tilgjengelige for sammenstilling av svar.
+
+Vennligst kall sok_lovdata eller hent_lovtekst først for å samle relevante dokumenter 
+før du ber om sammenstilling av svaret."""
+    
+    # Hent konfigurasjon
+    agent_config = AgentConfiguration.from_runnable_config(config) if config else AgentConfiguration()
+    model = load_chat_model(agent_config.response_model)
+    
+    # Format dokumenter for prompt
     docs_text = ""
     for i, doc in enumerate(documents):
         metadata_str = ", ".join([
@@ -236,12 +262,10 @@ async def sammenstill_svar(documents: List[Document], original_question: str) ->
         ])
         docs_text += f"\n\nDokument {i+1}:\n{doc.page_content}\nMetadata: {metadata_str}"
     
-    response = await client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {
-                "role": "system",
-                "content": """Du er en juridisk assistent som gir presise svar basert på norsk lovgivning.
+    response = await model.ainvoke([
+        {
+            "role": "system",
+            "content": """Du er en juridisk assistent som gir presise svar basert på norsk lovgivning.
 
 Oppgaver:
 - Gi strukturerte, juridisk korrekte svar
@@ -255,15 +279,14 @@ Format svaret med:
 2. Juridisk begrunnelse
 3. Relevante lovparagrafer og kilder
 4. Eventuelle forbehold eller presiseringer"""
-            },
-            {
-                "role": "user",
-                "content": f"Spørsmål: {original_question}\n\nRelevante juridiske dokumenter:{docs_text}\n\nGi et strukturert juridisk svar med kildehenvisninger."
-            }
-        ]
-    )
+        },
+        {
+            "role": "user",
+            "content": f"Spørsmål: {original_question}\n\nRelevante juridiske dokumenter:{docs_text}\n\nGi et strukturert juridisk svar med kildehenvisninger."
+        }
+    ])
     
-    return response.choices[0].message.content
+    return response.content
 
 
 # Liste med alle tools for enkel import
