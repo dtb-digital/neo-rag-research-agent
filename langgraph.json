@@ -2,7 +2,8 @@
   "version": 1,
   "dependencies": [
     "langchain-core",
-    "langchain-openai", 
+    "langchain-openai",
+    "langchain-anthropic",
     "langchain-pinecone",
     "langgraph",
     "openai",
