@@ -1,21 +1,24 @@
 """Tools for Neo RAG Research Agent.
 
 Dette modulet inneholder fire selvstendige tools for juridisk informasjonssøk:
-1. sok_lovdata - Grunnleggende vektorsøk i Pinecone
+1. sok_lovdata - Grunnleggende vektorsøk i Pinecone (oppdatert for mange treff)
 2. generer_sokestrenger - Intelligent oppbreking av komplekse spørsmål  
 3. hent_lovtekst - Direkte henting av spesifikke lovtekster
 4. sammenstill_svar - Sammenstilling av juridisk svar
 
-Hver tool er komplett selvstendige uten kryss-referanser.
+Bruker native LangGraph state management med Command objekter for automatisk
+state-oppdatering via reduce_docs reducer.
 """
 
 import asyncio
 import os
-from typing import List, Optional
+from typing import Annotated, List, Optional
 
 from langchain_core.documents import Document
-from langchain_core.tools import tool
+from langchain_core.messages import ToolMessage
+from langchain_core.tools import InjectedToolCallId, tool
 from langchain_openai import OpenAIEmbeddings
+from langgraph.types import Command
 from openai import AsyncOpenAI
 from pinecone import Pinecone
 
@@ -23,15 +26,22 @@ from src.config import PINECONE_INDEX_NAME
 
 
 @tool
-async def sok_lovdata(query: str, k: int = 5) -> List[Document]:
-    """Søk i Lovdata med vektorsøk. Komplett, selvstedig implementasjon.
+async def sok_lovdata(
+    query: str, 
+    k: int = 10,
+    tool_call_id: Annotated[str, InjectedToolCallId] = None
+) -> Command:
+    """Søk i Lovdata med vektorsøk. Returnerer mange dokumenter for bedre dekning.
+    
+    Bruker native LangGraph state management - dokumenter oppdateres automatisk
+    i state.documents via reduce_docs reducer.
     
     Args:
         query: Søkestreng for juridisk informasjon
-        k: Antall resultater som skal returneres
+        k: Antall resultater som skal returneres (standard: 10 for mange treff)
         
     Returns:
-        Liste med relevante dokumenter med metadata
+        Command som oppdaterer state.documents og returnerer ToolMessage
     """
     # Embed query asynkront
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
@@ -64,7 +74,31 @@ async def sok_lovdata(query: str, k: int = 5) -> List[Document]:
         )
         documents.append(doc)
     
-    return documents
+    # Lag feedback melding
+    result_summary = f"Søk fullført for '{query}'. Fant {len(documents)} relevante dokumenter fra Lovdata."
+    
+    if documents:
+        # Legg til sammendrag av hva som ble funnet
+        unique_laws = set()
+        for doc in documents[:5]:  # Vis de 5 første
+            if doc.metadata.get("lov_navn"):
+                unique_laws.add(doc.metadata["lov_navn"])
+        
+        if unique_laws:
+            laws_text = ", ".join(list(unique_laws)[:3])
+            result_summary += f" Inkluderer dokumenter fra: {laws_text}"
+            if len(unique_laws) > 3:
+                result_summary += f" og {len(unique_laws) - 3} andre lover."
+    
+    result_summary += " Dokumentene er lagt til i agent state for videre analyse."
+    
+    # Returner Command som oppdaterer state.documents automatisk
+    return Command(
+        update={
+            "documents": documents,
+            "messages": [ToolMessage(content=result_summary, tool_call_id=tool_call_id)]
+        }
+    )
 
 
 @tool
@@ -109,8 +143,16 @@ Skriv hver søkestreng på egen linje, kun søkestrengene uten nummerering eller
 
 
 @tool
-async def hent_lovtekst(lov_id: str, paragraf_nr: Optional[str] = None, kapittel_nr: Optional[str] = None) -> List[Document]:
+async def hent_lovtekst(
+    lov_id: str, 
+    paragraf_nr: Optional[str] = None, 
+    kapittel_nr: Optional[str] = None,
+    tool_call_id: Annotated[str, InjectedToolCallId] = None
+) -> Command:
     """Hent spesifikke lovtekster med metadata-filtering.
+    
+    Bruker native LangGraph state management - dokumenter oppdateres automatisk
+    i state.documents via reduce_docs reducer.
     
     Args:
         lov_id: Lovens ID (påkrevd)
@@ -118,7 +160,7 @@ async def hent_lovtekst(lov_id: str, paragraf_nr: Optional[str] = None, kapittel
         kapittel_nr: Spesifikt kapittel (valgfri)
         
     Returns:
-        Liste med lovtekst-dokumenter med full metadata
+        Command som oppdaterer state.documents og returnerer ToolMessage
     """
     # Bygger filter
     filter_dict = {"lov_id": {"$eq": lov_id}}
@@ -154,7 +196,22 @@ async def hent_lovtekst(lov_id: str, paragraf_nr: Optional[str] = None, kapittel
         )
         documents.append(doc)
     
-    return documents
+    # Lag feedback melding
+    filter_desc = f"lov_id={lov_id}"
+    if paragraf_nr:
+        filter_desc += f", paragraf_nr={paragraf_nr}"
+    if kapittel_nr:
+        filter_desc += f", kapittel_nr={kapittel_nr}"
+    
+    result_summary = f"Hentet {len(documents)} dokumenter for {filter_desc}. Dokumentene er lagt til i agent state for videre analyse."
+    
+    # Returner Command som oppdaterer state.documents automatisk
+    return Command(
+        update={
+            "documents": documents,
+            "messages": [ToolMessage(content=result_summary, tool_call_id=tool_call_id)]
+        }
+    )
 
 
 @tool
