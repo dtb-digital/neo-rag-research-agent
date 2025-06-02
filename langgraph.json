@@ -1,6 +1,15 @@
 {
   "version": 1,
+  "dependencies": [
+    "langchain-core",
+    "langchain-openai", 
+    "langchain-pinecone",
+    "langgraph",
+    "openai",
+    "pinecone-client",
+    "python-dotenv"
+  ],
   "graphs": {
-    "retriever": "./src/retrieval_graph/graph.py:graph"
+    "neo_rag_agent": "src.neo_rag_agent:graph"
   }
 }

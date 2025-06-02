@@ -1,41 +1,98 @@
-"""
-Konfigurasjon og miljøvariabel-håndtering for Lovdata RAG-agent.
-"""
+"""Konfigurasjon for Neo RAG Research Agent."""
+
+from __future__ import annotations
+
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TypedDict
+
 from dotenv import load_dotenv
+from langchain_core.runnables import RunnableConfig
 
 # Last inn miljøvariabler fra .env-fil
 dotenv_path = Path(__file__).parent.parent / ".env"
 load_dotenv(dotenv_path=dotenv_path if dotenv_path.exists() else None)
 
-# API-nøkler
+# API-nøkler og konfigurasjon
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-# Pinecone konfigurasjon
-PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "lovdata-index")
-PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT", "gcp-starter")
-
-# Embedding-konfigurasjon
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "1536"))
-
-# Logging
+PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "lovdata-embedding-index")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-DEBUG = os.getenv("DEBUG", "false").lower() in ("true", "1", "t")
+
+
+class SearchKwargs(TypedDict):
+    """Søkekonfigurasjon."""
+    k: int
+
+
+@dataclass(kw_only=True)  
+class AgentConfiguration:
+    """Konfigurasjon for Neo RAG Research Agent."""
+
+    # Modeller
+    query_model: str = field(
+        default="openai/gpt-4o-mini",
+        metadata={
+            "description": "Språkmodell for spørsmålsbehandling og agent-logikk. Format: provider/model-name."
+        },
+    )
+    
+    response_model: str = field(
+        default="openai/gpt-4o-mini", 
+        metadata={
+            "description": "Språkmodell for respons-generering. Format: provider/model-name."
+        },
+    )
+
+    embedding_model: str = field(
+        default="openai/text-embedding-3-small",
+        metadata={
+            "description": "Modell for tekstembedding. Format: provider/model-name."
+        },
+    )
+
+    # Søkekonfigurasjon
+    search_kwargs: SearchKwargs = field(
+        default_factory=lambda: {"k": 5},
+        metadata={
+            "description": "Konfigurasjon for søkeprosessen, inkludert antall dokumenter som skal hentes."
+        },
+    )
+
+    @classmethod
+    def from_runnable_config(cls, config: RunnableConfig) -> AgentConfiguration:
+        """Lag en konfigurasjon fra en RunnableConfig.
+        
+        Args:
+            config: RunnableConfig med konfigurable parametre
+            
+        Returns:
+            AgentConfiguration instans
+        """
+        if not config or "configurable" not in config:
+            return cls()
+        
+        # Filtrer til kun gyldige AgentConfiguration parametere
+        valid_params = {
+            "query_model", "response_model", "embedding_model", "search_kwargs"
+        }
+        filtered_config = {
+            k: v for k, v in config["configurable"].items()
+            if k in valid_params
+        }
+        
+        return cls(**filtered_config)
+
 
 def validate_config() -> tuple[bool, list[str]]:
-    """
-    Validerer at alle nødvendige konfigurasjonsvariabler er satt.
+    """Valider at alle nødvendige konfigurasjonsvariabler er satt.
     
     Returns:
         tuple: (er_gyldig, liste_med_feilmeldinger)
     """
     errors = []
     
-    # Sjekk påkrevde API-nøkler
     if not PINECONE_API_KEY:
         errors.append("PINECONE_API_KEY er ikke satt i miljøvariablene")
     if not OPENAI_API_KEY:
@@ -63,11 +120,7 @@ def get_config_dict() -> dict:
         "PINECONE_API_KEY": sensurert_verdi("PINECONE_API_KEY", PINECONE_API_KEY),
         "OPENAI_API_KEY": sensurert_verdi("OPENAI_API_KEY", OPENAI_API_KEY),
         "PINECONE_INDEX_NAME": PINECONE_INDEX_NAME,
-        "PINECONE_ENVIRONMENT": PINECONE_ENVIRONMENT,
-        "EMBEDDING_MODEL": EMBEDDING_MODEL,
-        "EMBEDDING_DIMENSION": EMBEDDING_DIMENSION,
         "LOG_LEVEL": LOG_LEVEL,
-        "DEBUG": DEBUG,
     }
 
 # Valider konfigurasjon ved import

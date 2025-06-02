@@ -12,6 +12,7 @@ dependencies = [
     "langchain-openai>=0.0.5",
     "langchain-pinecone>=0.0.2",
     "pinecone-client>=3.0.0",
+    "openai>=1.0.0",
     "python-dotenv>=1.0.0",
 ]
 readme = "README.md"
@@ -32,10 +33,10 @@ dev = ["pytest", "ruff"]
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["retrieval_graph", "shared"]
+packages = ["src"]
 
 [project.entry-points."langgraph.templates"]
-"retrieval_graph" = "src/retrieval_graph"
+"neo_rag_agent" = "src"
 
 [project.entry-points."langgraph.graphs"]
-"retrieval_graph" = "src/retrieval_graph"
+"neo_rag_agent" = "src"
