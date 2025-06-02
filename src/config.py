@@ -26,9 +26,6 @@ EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "1536"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 DEBUG = os.getenv("DEBUG", "false").lower() in ("true", "1", "t")
 
-# MCP konfigurasjon
-MCP_TRANSPORT = os.getenv("MCP_TRANSPORT", "stdio")
-
 def validate_config() -> tuple[bool, list[str]]:
     """
     Validerer at alle nødvendige konfigurasjonsvariabler er satt.
@@ -71,7 +68,6 @@ def get_config_dict() -> dict:
         "EMBEDDING_DIMENSION": EMBEDDING_DIMENSION,
         "LOG_LEVEL": LOG_LEVEL,
         "DEBUG": DEBUG,
-        "MCP_TRANSPORT": MCP_TRANSPORT,
     }
 
 # Valider konfigurasjon ved import
